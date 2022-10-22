@@ -1368,7 +1368,9 @@ void MVKPresentableSwapchainImage::addPresentedHandler(id<CAMetalDrawable> mtlDr
 			release();
 		}];
 		return;
-	}
+    } else if(_swapchain) {
+        _swapchain->recordPresentTime(presentTimingInfo);
+    }
 #endif
 
 	// If MTLDrawable.presentedTime/addPresentedHandler isn't supported,

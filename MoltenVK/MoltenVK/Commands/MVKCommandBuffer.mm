@@ -194,7 +194,6 @@ void MVKCommandBuffer::addCommand(MVKCommand* command) {
     if(_immediateCmdEncoder) {
         _immediateCmdEncoder->encodeCommands(command);
         if( !_isReusable ) {
-            releaseCommands(command);
             return;
         }
     }

@@ -188,6 +188,12 @@ public:
 	 * or nil if this semaphore is not underpinned by a MTLSharedEvent.
 	 */
 	virtual id<MTLSharedEvent> getMTLSharedEvent() { return nil; };
+    
+    /** Encodes an operation to block command buffer operation until this semaphore is signaled. */
+    void encodeWait(id<MTLCommandBuffer> cmdBuff);
+    
+    /** Encodes an operation to signal the semaphore. */
+    void encodeSignal(id<MTLCommandBuffer> cmdBuff);
 
 
 #pragma mark Construction
@@ -196,7 +202,8 @@ public:
 
 protected:
 	void propagateDebugName() override {}
-
+    id<MTLEvent> _mtlEvent;
+    std::atomic<uint64_t> _mtlEventValue;
 };
 
 
