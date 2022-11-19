@@ -106,6 +106,8 @@ MVK_EXTENSION(EXT_metal_surface,                   EXT_METAL_SURFACE,           
 MVK_EXTENSION(EXT_post_depth_coverage,             EXT_POST_DEPTH_COVERAGE,              DEVICE,   11.0,  11.0)
 MVK_EXTENSION(EXT_private_data,                    EXT_PRIVATE_DATA,                     DEVICE,   10.11,  8.0)
 MVK_EXTENSION(EXT_robustness2,                     EXT_ROBUSTNESS_2,                     DEVICE,   10.11,  8.0)
+MVK_EXTENSION(EXT_transform_feedback,              EXT_TRANSFORM_FEEDBACK,               DEVICE,   10.11,  8.0)
+MVK_EXTENSION(EXT_shader_subgroup_vote,            EXT_SHADER_SUBGROUP_VOTE,             DEVICE,   10.11,  8.0)
 MVK_EXTENSION(EXT_sample_locations,                EXT_SAMPLE_LOCATIONS,                 DEVICE,   10.13, 11.0)
 MVK_EXTENSION(EXT_sampler_filter_minmax,           EXT_SAMPLER_FILTER_MINMAX,            DEVICE,   MVK_NA, MVK_NA)
 MVK_EXTENSION(EXT_scalar_block_layout,             EXT_SCALAR_BLOCK_LAYOUT,              DEVICE,   10.11,  8.0)

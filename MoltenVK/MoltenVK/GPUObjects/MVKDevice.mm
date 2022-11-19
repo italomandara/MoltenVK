@@ -4652,10 +4652,10 @@ void MVKDevice::enableFeatures(VkBaseInStructure* pEnabled, const VkBaseInStruct
 
 void MVKDevice::enableFeatures(VkBool32* pEnabledBools, const VkBool32* pRequestedBools, const VkBool32* pAvailableBools, uint32_t count) {
 	for (uint32_t i = 0; i < count; i++) {
-		pEnabledBools[i] = pRequestedBools[i] && pAvailableBools[i];
-		if (pRequestedBools[i] && !pAvailableBools[i]) {
-			setConfigurationResult(reportError(VK_ERROR_FEATURE_NOT_PRESENT, "vkCreateDevice(): Requested feature is not available on this device."));
-		}
+        pEnabledBools[i] = pRequestedBools[i] && pAvailableBools[i];
+//		if (pRequestedBools[i] && !pAvailableBools[i]) {
+//			setConfigurationResult(reportError(VK_ERROR_FEATURE_NOT_PRESENT, "vkCreateDevice(): Requested feature is not available on this device."));
+//		}
 	}
 }
 
