@@ -517,6 +517,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				DISABLE_MANUAL_TARGET_ORDER_BUILD_WARNING = YES;
+				GCC_OPTIMIZATION_LEVEL = 3;
 			};
 			name = Debug;
 		};
@@ -524,6 +525,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				DISABLE_MANUAL_TARGET_ORDER_BUILD_WARNING = YES;
+				GCC_OPTIMIZATION_LEVEL = 3;
 			};
 			name = Release;
 		};
