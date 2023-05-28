@@ -57,6 +57,11 @@ static std::string withOverride(const std::string& patch) {
     }
 }
 
+struct Patch {
+    std::string find;
+    std::string replace;
+};
+
 Patch workaround_patches[] = {
     { std::string("t3.sample(s3, r0.yzwy.xyz).xyz"), std::string("r0.yzw") },
     { std::string("t3.sample(s3, r0.xyzx.xyz).xyz"), std::string("r0.xyz") },
