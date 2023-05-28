@@ -306,3 +306,8 @@ namespace mvk {
 
 }
 #endif
+
+struct Patch {
+    std::string find;
+    std::string replace;
+};
