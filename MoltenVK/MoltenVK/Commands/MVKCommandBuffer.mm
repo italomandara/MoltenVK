@@ -610,6 +610,7 @@ void MVKCommandEncoder::beginMetalRenderPass(MVKCommandUse cmdUse) {
     _depthStencilState.beginMetalRenderPass();
     _stencilReferenceValueState.beginMetalRenderPass();
     _occlusionQueryState.beginMetalRenderPass();
+	_transformFeedbackBinding.markDirty();
 }
 
 // If custom sample positions have been set, return them, otherwise return an empty array.
@@ -723,6 +724,8 @@ void MVKCommandEncoder::finalizeDrawState(MVKGraphicsStage stage) {
         // Must happen before switching encoders.
         encodeStoreActions(true);
     }
+    if (_graphicsPipelineState.isDirty() || _graphicsResourcesState.isDirty())
+        _graphicsResourcesState.updateBindings();
     _graphicsPipelineState.encode(stage);    // Must do first..it sets others
     _graphicsResourcesState.encode(stage);   // Before push constants, to allow them to override.
     _viewportState.encode(stage);
@@ -789,6 +792,8 @@ void MVKCommandEncoder::beginMetalComputeEncoding(MVKCommandUse cmdUse) {
 }
 
 void MVKCommandEncoder::finalizeDispatchState() {
+    if (_computePipelineState.isDirty() || _computeResourcesState.isDirty())
+        _computeResourcesState.updateBindings();
     _computePipelineState.encode();    // Must do first..it sets others
     _computeResourcesState.encode();   // Before push constants, to allow them to override.
     _computePushConstants.encode();
@@ -901,6 +906,7 @@ MVKPushConstantsCommandEncoderState* MVKCommandEncoder::getPushConstants(VkShade
 		case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT:	return &_tessEvalPushConstants;
 		case VK_SHADER_STAGE_FRAGMENT_BIT:					return &_fragmentPushConstants;
 		case VK_SHADER_STAGE_COMPUTE_BIT:					return &_computePushConstants;
+		case VK_SHADER_STAGE_GEOMETRY_BIT:					return &_geometryPushConstants;
 		default:
 			MVKAssert(false, "Invalid shader stage: %u", shaderStage);
 			return nullptr;
@@ -1124,8 +1130,8 @@ void MVKCommandEncoder::finishQueries() {
 MVKCommandEncoder::MVKCommandEncoder(MVKCommandBuffer* cmdBuffer,
 									 MVKPrefillMetalCommandBuffersStyle prefillStyle) : MVKBaseDeviceObject(cmdBuffer->getDevice()),
         _cmdBuffer(cmdBuffer),
-        _graphicsPipelineState(this),
-        _computePipelineState(this),
+        _graphicsPipelineState(this, VK_PIPELINE_BIND_POINT_GRAPHICS),
+        _computePipelineState(this, VK_PIPELINE_BIND_POINT_COMPUTE),
         _viewportState(this),
         _scissorState(this),
         _depthBiasState(this),
@@ -1139,8 +1145,9 @@ MVKCommandEncoder::MVKCommandEncoder(MVKCommandBuffer* cmdBuffer,
         _tessEvalPushConstants(this, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT),
         _fragmentPushConstants(this, VK_SHADER_STAGE_FRAGMENT_BIT),
         _computePushConstants(this, VK_SHADER_STAGE_COMPUTE_BIT),
+        _geometryPushConstants(this, VK_SHADER_STAGE_GEOMETRY_BIT),
         _occlusionQueryState(this),
-		_prefillStyle(prefillStyle){
+        _prefillStyle(prefillStyle){
 
             _pDeviceFeatures = &_device->_enabledFeatures;
             _pDeviceMetalFeatures = _device->_pMetalFeatures;

@@ -439,3 +439,95 @@ void MVKCmdSetStencilReference::encode(MVKCommandEncoder* cmdEncoder) {
     cmdEncoder->_stencilReferenceValueState.setReferenceValues(_faceMask, _stencilReference);
 }
 
+
+#pragma mark -
+#pragma mark MVKCmdBeginTransformFeedback
+
+
+VkResult MVKCmdBeginTransformFeedback::setContent(MVKCommandBuffer* cmdBuff,
+												  uint32_t firstCounterBuffer,
+												  uint32_t counterBufferCount,
+												  const VkBuffer* pCounterBuffers,
+												  const VkDeviceSize* pCounterBufferOffsets) {
+	_firstCounterBuffer = firstCounterBuffer;
+
+	_counterBuffers.resize(counterBufferCount);
+	memcpy(_counterBuffers.data(), pCounterBuffers, counterBufferCount * sizeof(MVKBuffer *));
+
+	_counterBufferOffsets.resize(counterBufferCount);
+	memcpy(_counterBufferOffsets.data(), pCounterBufferOffsets, counterBufferCount * sizeof(VkDeviceSize));
+
+	return VK_SUCCESS;
+}
+
+void MVKCmdBeginTransformFeedback::encode(MVKCommandEncoder* cmdEncoder) {
+	cmdEncoder->_transformFeedbackEnabled = true;
+}
+
+
+#pragma mark -
+#pragma mark MVKCmdEndTransformFeedback
+
+VkResult MVKCmdEndTransformFeedback::setContent(MVKCommandBuffer* cmdBuff,
+												uint32_t firstCounterBuffer,
+												uint32_t counterBufferCount,
+												const VkBuffer* pCounterBuffers,
+												const VkDeviceSize* pCounterBufferOffsets) {
+	_firstCounterBuffer = firstCounterBuffer;
+
+	_counterBuffers.resize(counterBufferCount);
+	memcpy(_counterBuffers.data(), pCounterBuffers, counterBufferCount * sizeof(MVKBuffer *));
+
+	_counterBufferOffsets.resize(counterBufferCount);
+	memcpy(_counterBufferOffsets.data(), pCounterBufferOffsets, counterBufferCount * sizeof(VkDeviceSize));
+
+	return VK_SUCCESS;
+}
+
+void MVKCmdEndTransformFeedback::encode(MVKCommandEncoder* cmdEncoder) {
+	cmdEncoder->_transformFeedbackEnabled = false;
+}
+
+
+#pragma mark -
+#pragma mark MVKCmdBindTransformFeedbackBuffers
+
+VkResult MVKCmdBindTransformFeedbackBuffers::setContent(MVKCommandBuffer* cmdBuff,
+														uint32_t firstBinding,
+														uint32_t bindingCount,
+														const VkBuffer* pBuffers,
+														const VkDeviceSize* pOffsets,
+														const VkDeviceSize* pSizes) {
+	_buffers.resize(bindingCount);
+	memcpy(_buffers.data(), pBuffers, bindingCount * sizeof(MVKBuffer *));
+
+	_offsets.resize(bindingCount);
+	memcpy(_offsets.data(), pOffsets, bindingCount * sizeof(VkDeviceSize));
+
+	if (pSizes) {
+		_sizes.resize(bindingCount);
+		memcpy(_sizes.data(), pSizes, bindingCount * sizeof(VkDeviceSize));
+	}
+
+	_firstBinding = firstBinding;
+
+	return VK_SUCCESS;
+}
+
+void MVKCmdBindTransformFeedbackBuffers::encode(MVKCommandEncoder* cmdEncoder) {
+	if (_buffers.size()) {
+		MVKMTLBufferBinding binding;
+		binding.mtlBuffer = _buffers[0]->getMTLBuffer();
+		binding.offset = _buffers[0]->getMTLBufferOffset() + _offsets[0];
+
+		if (_sizes.size()) {
+			VkDeviceSize size = _sizes[0];
+			if (size == VK_WHOLE_SIZE)
+				size = _buffers[0]->getByteCount();
+			binding.size = (uint32_t)size;
+		}
+
+		cmdEncoder->_transformFeedbackBinding.index = cmdEncoder->_transformFeedbackBufferIndex;
+		cmdEncoder->_transformFeedbackBinding.update(binding);
+	}
+}

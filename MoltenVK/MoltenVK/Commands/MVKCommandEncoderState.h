@@ -78,6 +78,9 @@ public:
 	 */
 	virtual void beginMetalComputeEncoding() { if (_isModified) { markDirty(); } }
 
+	/** Check whether this state is dirty */
+	bool isDirty() const { return _isDirty; }
+
     /**
      * If the content of this instance is dirty, marks this instance as no longer dirty
      * and calls the encodeImpl() function to encode the content onto the Metal encoder.
@@ -118,13 +121,14 @@ public:
     MVKPipeline* getPipeline();
 
     /** Constructs this instance for the specified command encoder. */
-    MVKPipelineCommandEncoderState(MVKCommandEncoder* cmdEncoder)
-        : MVKCommandEncoderState(cmdEncoder) {}
+    MVKPipelineCommandEncoderState(MVKCommandEncoder* cmdEncoder, VkPipelineBindPoint bindPoint)
+        : MVKCommandEncoderState(cmdEncoder), _bindPoint(bindPoint) {}
 
 protected:
     void encodeImpl(uint32_t stage) override;
 
     MVKPipeline* _pipeline = nullptr;
+    VkPipelineBindPoint _bindPoint;
 };
 
 
@@ -360,11 +364,12 @@ public:
 									 id<MTLResource> mtlResource,
 									 MTLResourceUsage mtlUsage,
 									 MTLRenderStages mtlStages) = 0;
+	void updateBindings();
 
 	void markDirty() override;
 
-    MVKResourcesCommandEncoderState(MVKCommandEncoder* cmdEncoder) :
-		MVKCommandEncoderState(cmdEncoder), _boundDescriptorSets{} {}
+    MVKResourcesCommandEncoderState(MVKCommandEncoder* cmdEncoder, VkPipelineBindPoint bindPoint) :
+		MVKCommandEncoderState(cmdEncoder), _bindPoint(bindPoint), _boundDescriptorSets{} {}
 
 protected:
 
@@ -478,6 +483,7 @@ protected:
 		bool needsSwizzle = false;
 	};
 
+	VkPipelineBindPoint _bindPoint;
 	MVKDescriptorSet* _boundDescriptorSets[kMVKMaxDescriptorSetCount];
 	MVKBitArray _metalUsageDirtyDescriptors[kMVKMaxDescriptorSetCount];
 
@@ -568,11 +574,13 @@ public:
 	void endMetalRenderPass() override;
 
 	void markDirty() override;
+	void markDirty(MVKShaderStage stage);
 
 #pragma mark Construction
-    
-    /** Constructs this instance for the specified command encoder. */
-    MVKGraphicsResourcesCommandEncoderState(MVKCommandEncoder* cmdEncoder) : MVKResourcesCommandEncoderState(cmdEncoder) {}
+
+	/** Constructs this instance for the specified command encoder. */
+	MVKGraphicsResourcesCommandEncoderState(MVKCommandEncoder* cmdEncoder)
+		: MVKResourcesCommandEncoderState(cmdEncoder, VK_PIPELINE_BIND_POINT_GRAPHICS) {}
 
 protected:
     void encodeImpl(uint32_t stage) override;
@@ -630,8 +638,9 @@ public:
 
 #pragma mark Construction
 
-    /** Constructs this instance for the specified command encoder. */
-    MVKComputeResourcesCommandEncoderState(MVKCommandEncoder* cmdEncoder) : MVKResourcesCommandEncoderState(cmdEncoder) {}
+	/** Constructs this instance for the specified command encoder. */
+	MVKComputeResourcesCommandEncoderState(MVKCommandEncoder* cmdEncoder)
+		: MVKResourcesCommandEncoderState(cmdEncoder, VK_PIPELINE_BIND_POINT_COMPUTE) {}
 
 protected:
     void encodeImpl(uint32_t) override;

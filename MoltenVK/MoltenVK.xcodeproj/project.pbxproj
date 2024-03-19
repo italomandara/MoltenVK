@@ -927,6 +927,7 @@
 				A9F55D2E198BE6A7004EC31B /* Products */,
 			);
 			sourceTree = "<group>";
+			usesTabs = 1;
 		};
 		A9F55D2E198BE6A7004EC31B /* Products */ = {
 			isa = PBXGroup;

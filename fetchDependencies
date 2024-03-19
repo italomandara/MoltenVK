@@ -325,7 +325,9 @@ if [ ! "$SPIRV_CROSS_ROOT" = "" ]; then
 	rm -rf ${REPO_NAME}
 	ln -sfn ${SPIRV_CROSS_ROOT} ${REPO_NAME}
 else
-	REPO_URL="https://github.com/KhronosGroup/${REPO_NAME}.git"
+	REPO_REMOTE=$(git remote | head -n 1)
+	REPO_URL=$(git remote get-url "$REPO_REMOTE")
+	REPO_URL="$(dirname "$REPO_URL")/${REPO_NAME}.git"
 	REPO_REV=$(cat "${EXT_REV_DIR}/${REPO_NAME}_repo_revision")
 
 	update_repo ${REPO_NAME} ${REPO_URL} ${REPO_REV}
@@ -425,6 +427,7 @@ function build_impl() {
 	echo Building external libraries for platform ${XC_PLTFM} and destination ${XC_DEST}
 
 	execute_xcodebuild_command 									\
+		GCC_PREPROCESSOR_DEFINITIONS='NDEBUG $(inherited)'		\
 		-project "${XC_PROJ}"									\
 		-scheme "${XC_SCHEME}"									\
 		-destination "generic/platform=${XC_DEST}"				\

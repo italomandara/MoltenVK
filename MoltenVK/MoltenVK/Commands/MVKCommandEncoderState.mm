@@ -22,6 +22,7 @@
 #include "MVKRenderPass.h"
 #include "MVKPipeline.h"
 #include "MVKQueryPool.h"
+#include "MVKBuffer.h"
 
 using namespace std;
 
@@ -37,8 +38,18 @@ MVKDevice* MVKCommandEncoderState::getDevice() { return _cmdEncoder->getDevice()
 #pragma mark MVKPipelineCommandEncoderState
 
 void MVKPipelineCommandEncoderState::bindPipeline(MVKPipeline* pipeline) {
-    if (pipeline != _pipeline) markDirty();
-    _pipeline = pipeline;
+	if (pipeline != _pipeline) {
+		markDirty();
+		if (_bindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS) {
+			bool beforeGS = _pipeline && static_cast<MVKGraphicsPipeline*>(_pipeline)->isGeometryPipeline();
+			bool afterGS = pipeline && static_cast<MVKGraphicsPipeline*>(pipeline)->isGeometryPipeline();
+			// GS and VS use different bind points for vertex bindings (GS uses object shader, VS uses vertex shader)
+			// So we need to rebind everything if it changes
+			if (beforeGS != afterGS)
+				_cmdEncoder->_graphicsResourcesState.markDirty(kMVKShaderStageVertex);
+		}
+	}
+	_pipeline = pipeline;
 }
 
 MVKPipeline* MVKPipelineCommandEncoderState::getPipeline() { return _pipeline; }
@@ -467,6 +478,10 @@ void MVKBlendColorCommandEncoderState::encodeImpl(uint32_t stage) {
 #pragma mark -
 #pragma mark MVKResourcesCommandEncoderState
 
+static bool descriptorHasOffsets(VkDescriptorType type) {
+	return type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC || type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+}
+
 void MVKResourcesCommandEncoderState::bindDescriptorSet(uint32_t descSetIndex,
 														MVKDescriptorSet* descSet,
 														MVKShaderResourceBinding& dslMTLRezIdxOffsets,
@@ -477,23 +492,60 @@ void MVKResourcesCommandEncoderState::bindDescriptorSet(uint32_t descSetIndex,
 
 	_boundDescriptorSets[descSetIndex] = descSet;
 
-	if (descSet->isUsingMetalArgumentBuffers()) {
-		// If the descriptor set has changed, track new resource usage.
-		if (dsChanged) {
-			auto& usageDirty = _metalUsageDirtyDescriptors[descSetIndex];
-			usageDirty.resize(descSet->getDescriptorCount());
-			usageDirty.setAllBits();
-		}
+	auto& usageDirty = _metalUsageDirtyDescriptors[descSetIndex];
 
-		// Update dynamic buffer offsets
-		uint32_t baseDynOfstIdx = dslMTLRezIdxOffsets.getMetalResourceIndexes().dynamicOffsetBufferIndex;
-		uint32_t doCnt = descSet->getDynamicOffsetDescriptorCount();
-		for (uint32_t doIdx = 0; doIdx < doCnt && dynamicOffsetIndex < dynamicOffsets.size; doIdx++) {
-			updateImplicitBuffer(_dynamicOffsets, baseDynOfstIdx + doIdx, dynamicOffsets[dynamicOffsetIndex++]);
-		}
+	// If the descriptor set has changed, track new resource usage.
+	if (dsChanged) {
+		usageDirty.resize(descSet->getDescriptorCount());
+		usageDirty.setAllBits();
+	}
 
-		// If something changed, mark dirty
-		if (dsChanged || doCnt > 0) { MVKCommandEncoderState::markDirty(); }
+	// Update dynamic buffer offsets
+	uint32_t baseDynOfstIdx = dslMTLRezIdxOffsets.getMetalResourceIndexes().dynamicOffsetBufferIndex;
+	uint32_t doCnt = descSet->getDynamicOffsetDescriptorCount();
+	for (uint32_t doIdx = 0; doIdx < doCnt && dynamicOffsetIndex < dynamicOffsets.size; doIdx++) {
+		updateImplicitBuffer(_dynamicOffsets, baseDynOfstIdx + doIdx, dynamicOffsets[dynamicOffsetIndex++]);
+	}
+
+	if (!dsChanged && !descSet->isUsingMetalArgumentBuffers() && doCnt > 0) {
+		// Dynamic buffers need to be rebound since their offsets changed
+		uint32_t numDescriptors = descSet->getDescriptorCount();
+		for (uint32_t i = 0; i < numDescriptors; i++) {
+			if (descriptorHasOffsets(descSet->getDescriptorAt(i)->getDescriptorType())) {
+				usageDirty.setBit(i);
+			}
+		}
+	}
+
+	// If something changed, mark dirty
+	if (dsChanged || doCnt > 0) { MVKCommandEncoderState::markDirty(); }
+}
+
+void MVKResourcesCommandEncoderState::updateBindings() {
+	if (_cmdEncoder->isUsingMetalArgumentBuffers()) { return; }
+
+	MVKPipeline* pipeline = getPipeline();
+	uint32_t dsCnt = pipeline->getDescriptorSetCount();
+	for (uint32_t dsIdx = 0; dsIdx < dsCnt; dsIdx++) {
+		MVKDescriptorSet* descSet = _boundDescriptorSets[dsIdx];
+		if (!descSet) { continue; }
+		MVKDescriptorSetLayout* dsLayout = descSet->getLayout();
+		MVKBitArray& used = pipeline->getAnyStageDescriptorBindingUse(dsIdx);
+		MVKBitArray& dirty = _metalUsageDirtyDescriptors[dsIdx];
+		MVKShaderResourceBinding& offsets = pipeline->getLayout()->getResourceIndexOffsets(dsIdx);
+		uint32_t baseDynOfstIdx = offsets.getMetalResourceIndexes().dynamicOffsetBufferIndex;
+		MVKArrayRef offsetBuffer(&_dynamicOffsets[baseDynOfstIdx], _dynamicOffsets.size() - baseDynOfstIdx);
+
+		uint32_t dslBindCnt = dsLayout->getBindingCount();
+		uint32_t dynamicOffsetIndex = 0;
+		for (uint32_t dslBindIdx = 0; dslBindIdx < dslBindCnt; dslBindIdx++) {
+			MVKDescriptorSetLayoutBinding* binding = dsLayout->getBindingAt(dslBindIdx);
+			if (used.getBit(dslBindIdx) && dirty.getBit(dslBindIdx, true)) {
+				binding->bind(_cmdEncoder, _bindPoint, descSet, offsets, offsetBuffer, dynamicOffsetIndex);
+			} else if (descriptorHasOffsets(binding->getDescriptorType())) {
+				dynamicOffsetIndex++;
+			}
+		}
 	}
 }
 
@@ -586,10 +638,8 @@ void MVKResourcesCommandEncoderState::encodeMetalArgumentBuffer(MVKShaderStage s
 // Mark the resource usage as needing an update for each Metal render encoder.
 void MVKResourcesCommandEncoderState::markDirty() {
 	MVKCommandEncoderState::markDirty();
-	if (_cmdEncoder->isUsingMetalArgumentBuffers()) {
-		for (uint32_t dsIdx = 0; dsIdx < kMVKMaxDescriptorSetCount; dsIdx++) {
-			_metalUsageDirtyDescriptors[dsIdx].setAllBits();
-		}
+	for (uint32_t dsIdx = 0; dsIdx < kMVKMaxDescriptorSetCount; dsIdx++) {
+		_metalUsageDirtyDescriptors[dsIdx].setAllBits();
 	}
 }
 
@@ -728,6 +778,11 @@ void MVKGraphicsResourcesCommandEncoderState::encodeBindings(MVKShaderStage stag
         bindImplicitBuffer(_cmdEncoder, shaderStage.viewRangeBufferBinding, viewRange.contents());
     }
 
+	if (_cmdEncoder->_transformFeedbackEnabled && stage == kMVKShaderStageVertex && _cmdEncoder->_transformFeedbackBinding.isDirty) {
+		bindImplicitBuffer(_cmdEncoder, _cmdEncoder->_transformFeedbackBinding, {});
+		_cmdEncoder->_transformFeedbackBinding.isDirty = false;
+	}
+
     encodeBinding<MVKMTLBufferBinding>(shaderStage.bufferBindings, shaderStage.areBufferBindingsDirty, bindBuffer);
     encodeBinding<MVKMTLTextureBinding>(shaderStage.textureBindings, shaderStage.areTextureBindingsDirty, bindTexture);
     encodeBinding<MVKMTLSamplerStateBinding>(shaderStage.samplerStateBindings, shaderStage.areSamplerStateBindingsDirty, bindSampler);
@@ -765,11 +820,15 @@ void MVKGraphicsResourcesCommandEncoderState::endMetalRenderPass() {
 // Mark everything as dirty
 void MVKGraphicsResourcesCommandEncoderState::markDirty() {
 	MVKResourcesCommandEncoderState::markDirty();
-    for (uint32_t i = kMVKShaderStageVertex; i <= kMVKShaderStageFragment; i++) {
-        MVKResourcesCommandEncoderState::markDirty(_shaderStageResourceBindings[i].bufferBindings, _shaderStageResourceBindings[i].areBufferBindingsDirty);
-        MVKResourcesCommandEncoderState::markDirty(_shaderStageResourceBindings[i].textureBindings, _shaderStageResourceBindings[i].areTextureBindingsDirty);
-        MVKResourcesCommandEncoderState::markDirty(_shaderStageResourceBindings[i].samplerStateBindings, _shaderStageResourceBindings[i].areSamplerStateBindingsDirty);
-    }
+	for (uint32_t i = kMVKShaderStageVertex; i <= kMVKShaderStageFragment; i++) {
+		markDirty(static_cast<MVKShaderStage>(i));
+	}
+}
+
+void MVKGraphicsResourcesCommandEncoderState::markDirty(MVKShaderStage stage) {
+	MVKResourcesCommandEncoderState::markDirty(_shaderStageResourceBindings[stage].bufferBindings, _shaderStageResourceBindings[stage].areBufferBindingsDirty);
+	MVKResourcesCommandEncoderState::markDirty(_shaderStageResourceBindings[stage].textureBindings, _shaderStageResourceBindings[stage].areTextureBindingsDirty);
+	MVKResourcesCommandEncoderState::markDirty(_shaderStageResourceBindings[stage].samplerStateBindings, _shaderStageResourceBindings[stage].areSamplerStateBindingsDirty);
 }
 
 void MVKGraphicsResourcesCommandEncoderState::encodeImpl(uint32_t stage) {
@@ -811,8 +870,51 @@ void MVKGraphicsResourcesCommandEncoderState::encodeImpl(uint32_t stage) {
                        });
 
 	} else if (!forTessellation && stage == kMVKGraphicsStageRasterization) {
+#if MVK_XCODE_14
+        if (pipeline->isGeometryPipeline()) {
+            encodeBindings(kMVKShaderStageGeometry, "geometry", fullImageViewSwizzle,
+                           [pipeline](MVKCommandEncoder* cmdEncoder, MVKMTLBufferBinding& b)->void {
+                if (b.isInline)
+                    [cmdEncoder->_mtlRenderEncoder setMeshBytes: b.mtlBytes
+                                                         length: b.size
+                                                        atIndex: b.index];
+                else
+                    [cmdEncoder->_mtlRenderEncoder setMeshBuffer: b.mtlBuffer
+                                                          offset: b.offset
+                                                         atIndex: b.index];
+            },
+                           [pipeline](MVKCommandEncoder* cmdEncoder, MVKMTLBufferBinding& b, const MVKArrayRef<uint32_t> s)->void {
+                [cmdEncoder->_mtlRenderEncoder setMeshBytes: s.data
+                                                     length: s.size * sizeof(uint32_t)
+                                                    atIndex: b.index];
+            },
+                           [](MVKCommandEncoder* cmdEncoder, MVKMTLTextureBinding& b)->void {
+                [cmdEncoder->_mtlRenderEncoder setMeshTexture: b.mtlTexture
+                                                      atIndex: b.index];
+            },
+                           [](MVKCommandEncoder* cmdEncoder, MVKMTLSamplerStateBinding& b)->void {
+                [cmdEncoder->_mtlRenderEncoder setMeshSamplerState: b.mtlSamplerState
+                                                           atIndex: b.index];
+            });
+        }
+#endif
         encodeBindings(kMVKShaderStageVertex, "vertex", fullImageViewSwizzle,
                        [pipeline](MVKCommandEncoder* cmdEncoder, MVKMTLBufferBinding& b)->void {
+#if MVK_XCODE_14
+							if (pipeline->isGeometryPipeline()) {
+								if (b.isInline)
+									[cmdEncoder->_mtlRenderEncoder setObjectBytes: b.mtlBytes
+																		   length: b.size
+																		  atIndex: b.index];
+								else
+									[cmdEncoder->_mtlRenderEncoder setObjectBuffer: b.mtlBuffer
+																			offset: b.offset
+																		   atIndex: b.index];
+
+								return;
+							}
+#endif
+
                            // The app may have bound more vertex attribute buffers than used by the pipeline.
                            // We must not bind those extra buffers to the shader because they might overwrite
                            // any implicit buffers used by the pipeline.
@@ -846,19 +948,46 @@ void MVKGraphicsResourcesCommandEncoderState::encodeImpl(uint32_t stage) {
                                b.isDirty = true;	// We haven't written it out, so leave dirty until next time.
 						   }
                        },
-                       [](MVKCommandEncoder* cmdEncoder, MVKMTLBufferBinding& b, const MVKArrayRef<uint32_t> s)->void {
-                           cmdEncoder->setVertexBytes(cmdEncoder->_mtlRenderEncoder,
-                                                      s.data,
-                                                      s.size * sizeof(uint32_t),
-                                                      b.index);
+                       [pipeline](MVKCommandEncoder* cmdEncoder, MVKMTLBufferBinding& b, const MVKArrayRef<uint32_t> s)->void {
+#if MVK_XCODE_14
+							if (pipeline->isGeometryPipeline()) {
+								[cmdEncoder->_mtlRenderEncoder setObjectBytes: s.data
+																	   length: s.size * sizeof(uint32_t)
+																	  atIndex: b.index];
+							} else
+#endif
+							{
+								if (b.isInline)
+									cmdEncoder->setVertexBytes(cmdEncoder->_mtlRenderEncoder, s.data, s.size * sizeof(uint32_t), b.index);
+								else
+									[cmdEncoder->_mtlRenderEncoder setVertexBuffer: b.mtlBuffer
+																			offset: b.offset
+																		   atIndex: b.index];
+							}
                        },
-                       [](MVKCommandEncoder* cmdEncoder, MVKMTLTextureBinding& b)->void {
-                           [cmdEncoder->_mtlRenderEncoder setVertexTexture: b.mtlTexture
-                                                                   atIndex: b.index];
+                       [pipeline](MVKCommandEncoder* cmdEncoder, MVKMTLTextureBinding& b)->void {
+#if MVK_XCODE_14
+							if (pipeline->isGeometryPipeline()) {
+								[cmdEncoder->_mtlRenderEncoder setObjectTexture: b.mtlTexture
+																		atIndex: b.index];
+							} else
+#endif
+							{
+								[cmdEncoder->_mtlRenderEncoder setVertexTexture: b.mtlTexture
+																		atIndex: b.index];
+							}
                        },
-                       [](MVKCommandEncoder* cmdEncoder, MVKMTLSamplerStateBinding& b)->void {
-                           [cmdEncoder->_mtlRenderEncoder setVertexSamplerState: b.mtlSamplerState
-                                                                        atIndex: b.index];
+                       [pipeline](MVKCommandEncoder* cmdEncoder, MVKMTLSamplerStateBinding& b)->void {
+#if MVK_XCODE_14
+							if (pipeline->isGeometryPipeline()) {
+								[cmdEncoder->_mtlRenderEncoder setObjectSamplerState: b.mtlSamplerState
+																			 atIndex: b.index];
+							} else
+#endif
+							{
+								[cmdEncoder->_mtlRenderEncoder setVertexSamplerState: b.mtlSamplerState
+																			 atIndex: b.index];
+							}
                        });
 
     }

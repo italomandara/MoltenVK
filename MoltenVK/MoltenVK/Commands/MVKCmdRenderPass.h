@@ -442,3 +442,80 @@ protected:
     uint32_t _stencilReference;
 };
 
+
+#pragma mark -
+#pragma mark MVKCmdBeginTransformFeedback
+
+/** */
+class MVKCmdBeginTransformFeedback : public MVKCommand {
+
+public:
+	VkResult setContent(MVKCommandBuffer* cmdBuff,
+						uint32_t firstCounterBuffer,
+						uint32_t counterBufferCount,
+						const VkBuffer* pCounterBuffers,
+						const VkDeviceSize* pCounterBufferOffsets);
+
+	void encode(MVKCommandEncoder* cmdEncoder) override;
+
+protected:
+	MVKCommandTypePool<MVKCommand>* getTypePool(MVKCommandPool* cmdPool) override;
+
+	uint32_t _firstCounterBuffer;
+
+	MVKSmallVector<MVKBuffer*, 4> _counterBuffers;
+	MVKSmallVector<VkDeviceSize, 4> _counterBufferOffsets;
+};
+
+
+#pragma mark -
+#pragma mark MVKCmdEndTransformFeedback
+
+/** */
+class MVKCmdEndTransformFeedback : public MVKCommand {
+
+public:
+	VkResult setContent(MVKCommandBuffer* cmdBuff,
+						uint32_t firstCounterBuffer,
+						uint32_t counterBufferCount,
+						const VkBuffer* pCounterBuffers,
+						const VkDeviceSize* pCounterBufferOffsets);
+
+	void encode(MVKCommandEncoder* cmdEncoder) override;
+
+protected:
+	MVKCommandTypePool<MVKCommand>* getTypePool(MVKCommandPool* cmdPool) override;
+
+	uint32_t _firstCounterBuffer;
+
+	MVKSmallVector<MVKBuffer*, 4> _counterBuffers;
+	MVKSmallVector<VkDeviceSize, 4> _counterBufferOffsets;
+};
+
+
+#pragma mark -
+#pragma mark MVKCmdBindTransformFeedbackBuffers
+
+/** */
+class MVKCmdBindTransformFeedbackBuffers : public MVKCommand {
+
+public:
+	VkResult setContent(MVKCommandBuffer* cmdBuff,
+						uint32_t firstBinding,
+						uint32_t bindingCount,
+						const VkBuffer* pBuffers,
+						const VkDeviceSize* pOffsets,
+						const VkDeviceSize* pSizes);
+
+	void encode(MVKCommandEncoder* cmdEncoder) override;
+
+protected:
+	MVKCommandTypePool<MVKCommand>* getTypePool(MVKCommandPool* cmdPool) override;
+
+	uint32_t _firstBinding;
+
+	MVKSmallVector<MVKBuffer*, 4> _buffers;
+	MVKSmallVector<VkDeviceSize, 4> _offsets;
+	MVKSmallVector<VkDeviceSize, 4> _sizes;
+};
+

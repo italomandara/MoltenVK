@@ -444,6 +444,12 @@ void MVKPhysicalDevice::getFeatures(VkPhysicalDeviceFeatures2* features) {
 				shaderIntFuncsFeatures->shaderIntegerFunctions2 = true;
 				break;
 			}
+			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_FEATURES_EXT: {
+				auto* transformFeedbackFeatures = (VkPhysicalDeviceTransformFeedbackFeaturesEXT*)next;
+				transformFeedbackFeatures->transformFeedback = true;
+				transformFeedbackFeatures->geometryStreams = false;
+				break;
+			}
 			default:
 				break;
 		}
@@ -740,6 +746,13 @@ void MVKPhysicalDevice::getProperties(VkPhysicalDeviceProperties2* properties) {
 			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_EXT: {
 				auto* divisorProps = (VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT*)next;
 				divisorProps->maxVertexAttribDivisor = kMVKUndefinedLargeUInt32;
+				break;
+			}
+			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_PROPERTIES_EXT: {
+				// Incomplete!
+				auto* xfbProps = (VkPhysicalDeviceTransformFeedbackPropertiesEXT*)next;
+				xfbProps->maxTransformFeedbackBuffers = 1;
+				xfbProps->maxTransformFeedbackStreams = 1;
 				break;
 			}
 			default:
@@ -2215,12 +2228,14 @@ void MVKPhysicalDevice::initFeatures() {
     _features.robustBufferAccess = true;  // XXX Required by Vulkan spec
     _features.fullDrawIndexUint32 = true;
     _features.independentBlend = true;
+    _features.geometryShader = true;  // XXX Required by DXVK for D3D10
     _features.sampleRateShading = true;
     _features.depthBiasClamp = true;
     _features.fillModeNonSolid = true;
     _features.largePoints = true;
     _features.alphaToOne = true;
     _features.samplerAnisotropy = true;
+    _features.pipelineStatisticsQuery = true; // XXX Required by Damavand
     _features.shaderImageGatherExtended = true;
     _features.shaderStorageImageExtendedFormats = true;
     _features.shaderStorageImageReadWithoutFormat = true;
@@ -2228,9 +2243,11 @@ void MVKPhysicalDevice::initFeatures() {
     _features.shaderUniformBufferArrayDynamicIndexing = true;
     _features.shaderStorageBufferArrayDynamicIndexing = true;
     _features.shaderClipDistance = true;
+    _features.shaderCullDistance = true;  // XXX Required by DXVK for 10level9
     _features.shaderInt16 = true;
     _features.multiDrawIndirect = true;
     _features.inheritedQueries = true;
+    _features.geometryShader = true;
 
 	_features.shaderSampledImageArrayDynamicIndexing = _metalFeatures.arrayOfTextures;
 	_features.textureCompressionBC = mvkSupportsBCTextureCompression(_mtlDevice);
@@ -4378,8 +4395,8 @@ uint32_t MVKDevice::expandVisibilityResultMTLBuffer(uint32_t queryCount) {
 
     NSUInteger mtlBuffLen = mvkAlignByteCount(newBuffLen, _pMetalFeatures->mtlBufferAlignment);
     MTLResourceOptions mtlBuffOpts = MTLResourceStorageModeShared | MTLResourceCPUCacheModeDefaultCache;
-    [_globalVisibilityResultMTLBuffer release];
-    _globalVisibilityResultMTLBuffer = [getMTLDevice() newBufferWithLength: mtlBuffLen options: mtlBuffOpts];     // retained
+    if (!_globalVisibilityResultMTLBuffer)
+        _globalVisibilityResultMTLBuffer = [getMTLDevice() newBufferWithLength: maxBuffLen options: mtlBuffOpts];     // retained
 
     return _globalVisibilityQueryCount - queryCount;     // Might be lower than requested if an overflow occurred
 }

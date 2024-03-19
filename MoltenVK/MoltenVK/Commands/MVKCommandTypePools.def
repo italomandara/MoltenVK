@@ -125,6 +125,11 @@ MVK_CMD_TYPE_POOL(DebugMarkerEnd)
 MVK_CMD_TYPE_POOL(DebugMarkerInsert)
 MVK_CMD_TYPE_POOLS_FROM_THRESHOLD(WaitEvents, 1)
 MVK_CMD_TYPE_POOL(SetEvent)
+
+MVK_CMD_TYPE_POOL(BeginTransformFeedback)
+MVK_CMD_TYPE_POOL(EndTransformFeedback)
+MVK_CMD_TYPE_POOL(BindTransformFeedbackBuffers)
+
 MVK_CMD_TYPE_POOL_LAST(ResetEvent)
 
 #undef MVK_CMD_TYPE_POOL

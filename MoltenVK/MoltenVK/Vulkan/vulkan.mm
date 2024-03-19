@@ -3508,6 +3508,85 @@ void vkCmdSetSampleLocationsEXT(
 }
 
 #pragma mark -
+#pragma mark VK_EXT_transform_feedback extension
+
+
+MVK_PUBLIC_VULKAN_SYMBOL void vkCmdBeginQueryIndexedEXT(
+	VkCommandBuffer                             commandBuffer,
+	VkQueryPool                                 queryPool,
+	uint32_t                                    query,
+	VkQueryControlFlags                         flags,
+	uint32_t                                    index) {
+
+	MVKTraceVulkanCallStart();
+	// MVKAddCmd(BeginQueryIndexed, commandBuffer, queryPool, query, flags, index);
+	MVKTraceVulkanCallEnd();
+}
+
+MVK_PUBLIC_VULKAN_SYMBOL void vkCmdBeginTransformFeedbackEXT(
+	VkCommandBuffer                             commandBuffer,
+	uint32_t                                    firstCounterBuffer,
+	uint32_t                                    counterBufferCount,
+	const VkBuffer*                             pCounterBuffers,
+	const VkDeviceSize*                         pCounterBufferOffsets) {
+
+	MVKTraceVulkanCallStart();
+	MVKAddCmd(BeginTransformFeedback, commandBuffer, firstCounterBuffer, counterBufferCount, pCounterBuffers, pCounterBufferOffsets);
+	MVKTraceVulkanCallEnd();
+}
+
+MVK_PUBLIC_VULKAN_SYMBOL void vkCmdBindTransformFeedbackBuffersEXT(
+	VkCommandBuffer                             commandBuffer,
+	uint32_t                                    firstBinding,
+	uint32_t                                    bindingCount,
+	const VkBuffer*                             pBuffers,
+	const VkDeviceSize*                         pOffsets,
+	const VkDeviceSize*                         pSizes) {
+
+	MVKTraceVulkanCallStart();
+	MVKAddCmd(BindTransformFeedbackBuffers, commandBuffer, firstBinding, bindingCount, pBuffers, pOffsets, pSizes);
+	MVKTraceVulkanCallEnd();
+}
+
+MVK_PUBLIC_VULKAN_SYMBOL void vkCmdDrawIndirectByteCountEXT(
+	VkCommandBuffer                             commandBuffer,
+	uint32_t                                    instanceCount,
+	uint32_t                                    firstInstance,
+	VkBuffer                                    counterBuffer,
+	VkDeviceSize                                counterBufferOffset,
+	uint32_t                                    counterOffset,
+	uint32_t                                    vertexStride) {
+
+	MVKTraceVulkanCallStart();
+	// MVKAddCmd(DrawIndirectByteCount, commandBuffer, instanceCount, firstInstance, counterBuffer, counterBufferOffset, counterOffset, vertexStride);
+	MVKTraceVulkanCallEnd();
+}
+
+MVK_PUBLIC_VULKAN_SYMBOL void vkCmdEndQueryIndexedEXT(
+	VkCommandBuffer                             commandBuffer,
+	VkQueryPool                                 queryPool,
+	uint32_t                                    query,
+	uint32_t                                    index) {
+
+	MVKTraceVulkanCallStart();
+	// MVKAddCmd(EndQueryIndexed, commandBuffer, queryPool, query, index);
+	MVKTraceVulkanCallEnd();
+}
+
+MVK_PUBLIC_VULKAN_SYMBOL void vkCmdEndTransformFeedbackEXT(
+	VkCommandBuffer                             commandBuffer,
+	uint32_t                                    firstCounterBuffer,
+	uint32_t                                    counterBufferCount,
+	const VkBuffer*                             pCounterBuffers,
+	const VkDeviceSize*                         pCounterBufferOffsets) {
+
+	MVKTraceVulkanCallStart();
+	MVKAddCmd(EndTransformFeedback, commandBuffer, firstCounterBuffer, counterBufferCount, pCounterBuffers, pCounterBufferOffsets);
+	MVKTraceVulkanCallEnd();
+}
+
+
+#pragma mark -
 #pragma mark VK_GOOGLE_display_timing extension
 
 MVK_PUBLIC_VULKAN_SYMBOL VkResult vkGetRefreshCycleDurationGOOGLE(

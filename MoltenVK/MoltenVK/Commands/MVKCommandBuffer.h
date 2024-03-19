@@ -477,6 +477,10 @@ public:
 	/** Indicates whether the current draw is an indexed draw. */
 	bool _isIndexedDraw;
 
+	bool _transformFeedbackEnabled = false;
+	uint32_t _transformFeedbackBufferIndex = 19;
+	MVKMTLBufferBinding _transformFeedbackBinding;
+
 #pragma mark Construction
 
 	MVKCommandEncoder(MVKCommandBuffer* cmdBuffer,
@@ -521,6 +525,7 @@ protected:
 	MVKPushConstantsCommandEncoderState _tessEvalPushConstants;
 	MVKPushConstantsCommandEncoderState _fragmentPushConstants;
 	MVKPushConstantsCommandEncoderState _computePushConstants;
+	MVKPushConstantsCommandEncoderState _geometryPushConstants;
     MVKOcclusionQueryCommandEncoderState _occlusionQueryState;
 	MVKPrefillMetalCommandBuffersStyle _prefillStyle;
 	VkSubpassContents _subpassContents;

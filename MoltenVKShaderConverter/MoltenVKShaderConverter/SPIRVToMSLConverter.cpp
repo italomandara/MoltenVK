@@ -357,6 +357,7 @@ MVK_PUBLIC_SYMBOL bool SPIRVToMSLConverter::convert(SPIRVToMSLConversionConfigur
 	// Populate the shader conversion results with info from the compilation run,
 	// and mark which vertex attributes and resource bindings are used by the shader
 	populateEntryPoint(pMSLCompiler, shaderConfig.options, conversionResult.resultInfo.entryPoint);
+	conversionResult.resultInfo.entryPoint.supportsFastMath &= !pMSLCompiler || pMSLCompiler->can_compile_with_fast_math();
 	conversionResult.resultInfo.isRasterizationDisabled = pMSLCompiler && pMSLCompiler->get_is_rasterization_disabled();
 	conversionResult.resultInfo.isPositionInvariant = pMSLCompiler && pMSLCompiler->is_position_invariant();
 	conversionResult.resultInfo.needsSwizzleBuffer = pMSLCompiler && pMSLCompiler->needs_swizzle_buffer();
@@ -366,6 +367,7 @@ MVK_PUBLIC_SYMBOL bool SPIRVToMSLConverter::convert(SPIRVToMSLConversionConfigur
 	conversionResult.resultInfo.needsInputThreadgroupMem = pMSLCompiler && pMSLCompiler->needs_input_threadgroup_mem();
 	conversionResult.resultInfo.needsDispatchBaseBuffer = pMSLCompiler && pMSLCompiler->needs_dispatch_base_buffer();
 	conversionResult.resultInfo.needsViewRangeBuffer = pMSLCompiler && pMSLCompiler->needs_view_mask_buffer();
+	conversionResult.resultInfo.needsXfbBuffer = pMSLCompiler && pMSLCompiler->needs_xfb_buffer();
 	conversionResult.resultInfo.usesPhysicalStorageBufferAddressesCapability = usesPhysicalStorageBufferAddressesCapability(pMSLCompiler);
 
 	// When using Metal argument buffers, if the shader is provided with dynamic buffer offsets,
@@ -379,29 +381,31 @@ MVK_PUBLIC_SYMBOL bool SPIRVToMSLConverter::convert(SPIRVToMSLConversionConfigur
 		}
 	}
 
-	for (auto& ctxSI : shaderConfig.shaderInputs) {
-		if (ctxSI.shaderVar.builtin != spv::BuiltInMax) {
-			ctxSI.outIsUsedByShader = pMSLCompiler->has_active_builtin(ctxSI.shaderVar.builtin, spv::StorageClassInput);
-		} else {
-			ctxSI.outIsUsedByShader = pMSLCompiler->is_msl_shader_input_used(ctxSI.shaderVar.location);
-		}
-	}
-	for (auto& ctxSO : shaderConfig.shaderOutputs) {
-		if (ctxSO.shaderVar.builtin != spv::BuiltInMax) {
-			ctxSO.outIsUsedByShader = pMSLCompiler->has_active_builtin(ctxSO.shaderVar.builtin, spv::StorageClassOutput);
-		} else {
-			ctxSO.outIsUsedByShader = pMSLCompiler->is_msl_shader_output_used(ctxSO.shaderVar.location);
-		}
-	}
-	for (auto& ctxRB : shaderConfig.resourceBindings) {
-		if (ctxRB.resourceBinding.stage == shaderConfig.options.entryPointStage) {
-			ctxRB.outIsUsedByShader = pMSLCompiler->is_msl_resource_binding_used(ctxRB.resourceBinding.stage,
-																				 ctxRB.resourceBinding.desc_set,
-																				 ctxRB.resourceBinding.binding);
-		}
-	}
-
-	delete pMSLCompiler;
+    if (pMSLCompiler) {
+        for (auto& ctxSI : shaderConfig.shaderInputs) {
+            if (ctxSI.shaderVar.builtin != spv::BuiltInMax) {
+                ctxSI.outIsUsedByShader = pMSLCompiler->has_active_builtin(ctxSI.shaderVar.builtin, spv::StorageClassInput);
+            } else {
+                ctxSI.outIsUsedByShader = pMSLCompiler->is_msl_shader_input_used(ctxSI.shaderVar.location);
+            }
+        }
+        for (auto& ctxSO : shaderConfig.shaderOutputs) {
+            if (ctxSO.shaderVar.builtin != spv::BuiltInMax) {
+                ctxSO.outIsUsedByShader = pMSLCompiler->has_active_builtin(ctxSO.shaderVar.builtin, spv::StorageClassOutput);
+            } else {
+                ctxSO.outIsUsedByShader = pMSLCompiler->is_msl_shader_output_used(ctxSO.shaderVar.location);
+            }
+        }
+        for (auto& ctxRB : shaderConfig.resourceBindings) {
+            if (ctxRB.resourceBinding.stage == shaderConfig.options.entryPointStage) {
+                ctxRB.outIsUsedByShader = pMSLCompiler->is_msl_resource_binding_used(ctxRB.resourceBinding.stage,
+                                                                                     ctxRB.resourceBinding.desc_set,
+                                                                                     ctxRB.resourceBinding.binding);
+            }
+        }
+        
+        delete pMSLCompiler;
+    }
 
     // To check GLSL conversion
     if (shouldLogGLSL) {

@@ -934,6 +934,9 @@ MVKImage::MVKImage(MVKDevice* device, const VkImageCreateInfo* pCreateInfo) : MV
 							(_hasMutableFormat && pixFmts->getViewClass(_vkFormat) == MVKMTLViewClass::Color32 &&
 							 (getIsValidViewFormat(VK_FORMAT_R32_UINT) || getIsValidViewFormat(VK_FORMAT_R32_SINT)))));
 
+    if (mvkIsAnyFlagEnabled(getCombinedUsage(), VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) && !getDevice()->getPhysicalDevice()->getMetalFeatures()->renderLinearTextures)
+        _isLinearForAtomics = false;
+
 	_is3DCompressed = (getImageType() == VK_IMAGE_TYPE_3D) && (pixFmts->getFormatType(pCreateInfo->format) == kMVKFormatCompressed) && !_device->_pMetalFeatures->native3DCompressedTextures;
 	_isDepthStencilAttachment = (mvkAreAllFlagsEnabled(pCreateInfo->usage, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) ||
 								 mvkAreAllFlagsEnabled(pixFmts->getVkFormatProperties(pCreateInfo->format).optimalTilingFeatures, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT));
@@ -1363,6 +1366,7 @@ void MVKPresentableSwapchainImage::presentCAMetalDrawable(id<MTLCommandBuffer> m
 void MVKPresentableSwapchainImage::addPresentedHandler(id<CAMetalDrawable> mtlDrawable,
 													   MVKImagePresentInfo presentInfo) {
 #if !MVK_OS_SIMULATOR
+#ifdef __MAC_10_15_4
 	if ([mtlDrawable respondsToSelector: @selector(addPresentedHandler:)]) {
 		retain();	// Ensure this image is not destroyed while awaiting presentation
 		[mtlDrawable addPresentedHandler: ^(id<MTLDrawable> drawable) {
@@ -1374,6 +1378,7 @@ void MVKPresentableSwapchainImage::addPresentedHandler(id<CAMetalDrawable> mtlDr
 		}];
 		return;
 	}
+#endif
 #endif
 
 	// If MTLDrawable.presentedTime/addPresentedHandler isn't supported,
@@ -1719,6 +1724,13 @@ VkResult MVKImageViewPlane::initSwizzledMTLPixelFormat(const VkImageViewCreateIn
 			default:
 				break;
 		}
+	}
+
+	if (!_imageView->_image->hasPixelFormatView(_planeIndex)) {
+		if (!enableSwizzling()) {
+			MVKAssert(0, "Image without PixelFormatView usage couldn't enable swizzling!");
+		}
+		return VK_SUCCESS;
 	}
 
 	switch (_mtlPixFmt) {
