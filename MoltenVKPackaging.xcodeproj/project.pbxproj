@@ -98,6 +98,13 @@
 			remoteGlobalIDString = 2FEA0A3B24902F9F00EEF3AD;
 			remoteInfo = "MoltenVK-tvOS";
 		};
+		38DC61EC2BAB89FC00554EA5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A92DB40E1CE0F89600FBC835 /* MoltenVKShaderConverter.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = DCFD7F882A45BDA0007BBBF7;
+			remoteInfo = "MoltenVKShaderConverter-xrOS";
+		};
 		A92DB3F41CE0F72500FBC835 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = A92DB3EE1CE0F72500FBC835 /* MoltenVK.xcodeproj */;
@@ -291,6 +298,7 @@
 				A98149911FB6B566005F00B4 /* libMoltenVKShaderConverter.a */,
 				A9FC5F5D249D2547003CB086 /* libMoltenVKShaderConverter.a */,
 				A98149931FB6B566005F00B4 /* libMoltenVKShaderConverter.a */,
+				38DC61ED2BAB89FC00554EA5 /* libMoltenVKShaderConverter.a */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -357,6 +365,13 @@
 			remoteRef = 2FEA0ABD2490302F00EEF3AD /* PBXContainerItemProxy */;
 			sourceTree = BUILT_PRODUCTS_DIR;
 		};
+		38DC61ED2BAB89FC00554EA5 /* libMoltenVKShaderConverter.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libMoltenVKShaderConverter.a;
+			remoteRef = 38DC61EC2BAB89FC00554EA5 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
 		A92DB3F51CE0F72500FBC835 /* libMoltenVK.a */ = {
 			isa = PBXReferenceProxy;
 			fileType = archive.ar;
@@ -402,7 +417,7 @@
 		DCFD7F662A45BC7D007BBBF7 /* libMoltenVK.a */ = {
 			isa = PBXReferenceProxy;
 			fileType = archive.ar;
-			path = "libMoltenVK.a";
+			path = libMoltenVK.a;
 			remoteRef = DCFD7F652A45BC7D007BBBF7 /* PBXContainerItemProxy */;
 			sourceTree = BUILT_PRODUCTS_DIR;
 		};
@@ -628,6 +643,7 @@
 		A9FEADDD1F3517480010240E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				GCC_OPTIMIZATION_LEVEL = 3;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
@@ -635,6 +651,7 @@
 		A9FEADDE1F3517480010240E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				GCC_OPTIMIZATION_LEVEL = 3;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;
