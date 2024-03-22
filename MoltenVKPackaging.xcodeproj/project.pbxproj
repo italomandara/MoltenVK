@@ -615,6 +615,7 @@
 		A975D59C2140586700D4834F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				GCC_OPTIMIZATION_LEVEL = 3;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
@@ -622,6 +623,7 @@
 		A975D59D2140586700D4834F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				GCC_OPTIMIZATION_LEVEL = 3;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;
