@@ -1,7 +1,7 @@
 /*
  * MVKCommandEncodingPool.mm
  *
- * Copyright (c) 2015-2024 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -165,6 +165,10 @@ id<MTLComputePipelineState> MVKCommandEncodingPool::getAccumulateOcclusionQueryR
 	MVK_ENC_REZ_ACCESS(_mtlAccumOcclusionQueryResultsComputePipelineState, newAccumulateOcclusionQueryResultsMTLComputePipelineState(_commandPool));
 }
 
+id<MTLComputePipelineState> MVKCommandEncodingPool::getConvertUint8IndicesMTLComputePipelineState() {
+	MVK_ENC_REZ_ACCESS(_mtlConvertUint8IndicesComputePipelineState, newConvertUint8IndicesMTLComputePipelineState(_commandPool));
+}
+
 void MVKCommandEncodingPool::clear() {
 	lock_guard<mutex> lock(_lock);
 	destroyMetalResources();
@@ -174,9 +178,9 @@ void MVKCommandEncodingPool::clear() {
 #pragma mark Construction
 
 MVKCommandEncodingPool::MVKCommandEncodingPool(MVKCommandPool* commandPool) : _commandPool(commandPool),
-    _mtlBufferAllocator(commandPool->getDevice(), commandPool->getDevice()->_pMetalFeatures->maxMTLBufferSize, true),
-    _privateMtlBufferAllocator(commandPool->getDevice(), commandPool->getDevice()->_pMetalFeatures->maxMTLBufferSize, true, false, MTLStorageModePrivate),
-    _dedicatedMtlBufferAllocator(commandPool->getDevice(), commandPool->getDevice()->_pMetalFeatures->maxQueryBufferSize, true, true, MTLStorageModePrivate) {
+    _mtlBufferAllocator(commandPool->getDevice(), commandPool->getMetalFeatures().maxMTLBufferSize, true),
+    _privateMtlBufferAllocator(commandPool->getDevice(), commandPool->getMetalFeatures().maxMTLBufferSize, true, false, MTLStorageModePrivate),
+    _dedicatedMtlBufferAllocator(commandPool->getDevice(), commandPool->getMetalFeatures().maxQueryBufferSize, true, true, MTLStorageModePrivate) {
 }
 
 MVKCommandEncodingPool::~MVKCommandEncodingPool() {
@@ -259,5 +263,8 @@ void MVKCommandEncodingPool::destroyMetalResources() {
 
     [_mtlAccumOcclusionQueryResultsComputePipelineState release];
     _mtlAccumOcclusionQueryResultsComputePipelineState = nil;
+
+    [_mtlConvertUint8IndicesComputePipelineState release];
+    _mtlConvertUint8IndicesComputePipelineState = nil;
 }
 

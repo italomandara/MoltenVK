@@ -1,7 +1,7 @@
 /*
  * MVKInstance.h
  *
- * Copyright (c) 2015-2024 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,20 +35,15 @@ class MVKDebugUtilsMessenger;
 /** Tracks info about entry point function pointer addresses. */
 typedef struct MVKEntryPoint {
 	PFN_vkVoidFunction functionPointer;
+	const char* extName;
 	uint32_t apiVersion;
-	const char* ext1Name;
-	const char* ext2Name;
 	bool isDevice;
 
-	bool isCore() { return !ext1Name && !ext2Name; }
+	bool isCore() { return apiVersion > 0; }
 	bool isEnabled(uint32_t enabledVersion, const MVKExtensionList& extList, const MVKExtensionList* instExtList = nullptr) {
-		bool isAPISupported = MVK_VULKAN_API_VERSION_CONFORM(enabledVersion) >= apiVersion;
-		auto isExtnSupported = [this, isAPISupported](const MVKExtensionList& extList) {
-			return extList.isEnabled(this->ext1Name) && (isAPISupported || !this->ext2Name || extList.isEnabled(this->ext2Name));
-		};
-		return ((isCore() && isAPISupported) ||
-				isExtnSupported(extList) ||
-				(instExtList && isExtnSupported(*instExtList)));
+		return ((isCore() && MVK_VULKAN_API_VERSION_CONFORM(enabledVersion) >= apiVersion) ||
+				extList.isEnabled(this->extName) ||
+				(instExtList && instExtList->isEnabled(this->extName)));
 	}
 
 } MVKEntryPoint;
@@ -75,10 +70,10 @@ public:
 	const MVKConfiguration& getMVKConfig() override { return _enabledExtensions.vk_EXT_layer_settings.enabled ? _mvkConfig : getGlobalMVKConfig(); }
 
 	/** Returns the maximum version of Vulkan the application supports. */
-	inline uint32_t getAPIVersion() { return _appInfo.apiVersion; }
+	uint32_t getAPIVersion() { return _appInfo.apiVersion; }
 
 	/** Returns a pointer to the layer manager. */
-	inline MVKLayerManager* getLayerManager() { return MVKLayerManager::globalManager(); }
+	MVKLayerManager* getLayerManager() { return MVKLayerManager::globalManager(); }
 
 	/** Returns the function pointer corresponding to the named entry point, or NULL if it doesn't exist. */
 	PFN_vkVoidFunction getProcAddr(const char* pName);
@@ -159,9 +154,6 @@ public:
 	/** Returns whether debug callbacks are being used. */
 	bool hasDebugCallbacks() { return _hasDebugReportCallbacks || _hasDebugUtilsMessengers; }
 
-	/** The list of Vulkan extensions, indicating whether each has been enabled by the app. */
-	const MVKExtensionList _enabledExtensions;
-
 
 #pragma mark Object Creation
 
@@ -174,7 +166,7 @@ public:
      * Returns a reference to this object suitable for use as a Vulkan API handle.
      * This is the compliment of the getMVKInstance() method.
      */
-    inline VkInstance getVkInstance() { return (VkInstance)getVkHandle(); }
+    VkInstance getVkInstance() { return (VkInstance)getVkHandle(); }
 
     /**
      * Retrieves the MVKInstance instance referenced by the VkInstance handle.
@@ -198,6 +190,7 @@ protected:
     void logVersions();
 	VkResult verifyLayers(uint32_t count, const char* const* names);
 
+	MVKExtensionList _enabledExtensions;
 	MVKConfiguration _mvkConfig;
 	VkApplicationInfo _appInfo;
 	MVKSmallVector<MVKPhysicalDevice*, 2> _physicalDevices;

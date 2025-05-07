@@ -1,7 +1,7 @@
 /*
  * MVKDeviceMemory.mm
  *
- * Copyright (c) 2015-2024 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,11 +31,11 @@ using namespace std;
 #pragma mark MVKDeviceMemory
 
 void MVKDeviceMemory::propagateDebugName() {
-	setLabelIfNotNil(_mtlHeap, _debugName);
-	setLabelIfNotNil(_mtlBuffer, _debugName);
+	setMetalObjectLabel(_mtlHeap, _debugName);
+	setMetalObjectLabel(_mtlBuffer, _debugName);
 }
 
-VkResult MVKDeviceMemory::map(const VkMemoryMapInfoKHR* pMemoryMapInfo, void** ppData) {
+VkResult MVKDeviceMemory::map(const VkMemoryMapInfo* pMemoryMapInfo, void** ppData) {
 	if ( !isMemoryHostAccessible() ) {
 		return reportError(VK_ERROR_MEMORY_MAP_FAILED, "Private GPU-only memory cannot be mapped to host memory.");
 	}
@@ -62,7 +62,7 @@ VkResult MVKDeviceMemory::map(const VkMemoryMapInfoKHR* pMemoryMapInfo, void** p
 	return VK_SUCCESS;
 }
 
-VkResult MVKDeviceMemory::unmap(const VkMemoryUnmapInfoKHR* pUnmapMemoryInfo) {
+VkResult MVKDeviceMemory::unmap(const VkMemoryUnmapInfo* pUnmapMemoryInfo) {
 	if ( !isMapped() ) {
 		return reportError(VK_ERROR_MEMORY_MAP_FAILED, "Memory is not mapped. Call vkMapMemory() first.");
 	}
@@ -84,7 +84,7 @@ VkResult MVKDeviceMemory::flushToDevice(VkDeviceSize offset, VkDeviceSize size) 
 	if (memSize == 0 || !isMemoryHostAccessible()) { return VK_SUCCESS; }
 
 #if MVK_MACOS
-	if (_mtlBuffer && _mtlStorageMode == MTLStorageModeManaged) {
+	if ( !isUnifiedMemoryGPU() && _mtlBuffer && _mtlStorageMode == MTLStorageModeManaged) {
 		[_mtlBuffer didModifyRange: NSMakeRange(offset, memSize)];
 	}
 #endif
@@ -106,7 +106,7 @@ VkResult MVKDeviceMemory::pullFromDevice(VkDeviceSize offset,
 	if (memSize == 0 || !isMemoryHostAccessible()) { return VK_SUCCESS; }
 
 #if MVK_MACOS
-	if (pBlitEnc && _mtlBuffer && _mtlStorageMode == MTLStorageModeManaged) {
+	if ( !isUnifiedMemoryGPU() && pBlitEnc && _mtlBuffer && _mtlStorageMode == MTLStorageModeManaged) {
 		if ( !pBlitEnc->mtlCmdBuffer) { pBlitEnc->mtlCmdBuffer = _device->getAnyQueue()->getMTLCommandBuffer(kMVKCommandUseInvalidateMappedMemoryRanges); }
 		if ( !pBlitEnc->mtlBlitEncoder) { pBlitEnc->mtlBlitEncoder = [pBlitEnc->mtlCmdBuffer blitCommandEncoder]; }
 		[pBlitEnc->mtlBlitEncoder synchronizeResource: _mtlBuffer];
@@ -139,7 +139,7 @@ VkResult MVKDeviceMemory::addBuffer(MVKBuffer* mvkBuff) {
 	}
 
 	if (!ensureMTLBuffer() ) {
-		return reportError(VK_ERROR_OUT_OF_DEVICE_MEMORY, "Could not bind a VkBuffer to a VkDeviceMemory of size %llu bytes. The maximum memory-aligned size of a VkDeviceMemory that supports a VkBuffer is %llu bytes.", _allocationSize, _device->_pMetalFeatures->maxMTLBufferSize);
+		return reportError(VK_ERROR_OUT_OF_DEVICE_MEMORY, "Could not bind a VkBuffer to a VkDeviceMemory of size %llu bytes. The maximum memory-aligned size of a VkDeviceMemory that supports a VkBuffer is %llu bytes.", _allocationSize, getMetalFeatures().maxMTLBufferSize);
 	}
 
 	// In the dedicated case, we already saved the buffer we're going to use.
@@ -183,20 +183,22 @@ bool MVKDeviceMemory::ensureMTLHeap() {
 	if (_isHostMemImported) { return true; }
 
 	// Don't bother if we don't have placement heaps.
-	if (!getDevice()->_pMetalFeatures->placementHeaps) { return true; }
+	if (!getMetalFeatures().placementHeaps) { return true; }
 
 	// Can't create MTLHeaps of zero size.
 	if (_allocationSize == 0) { return true; }
 
-#if MVK_MACOS
-	// MTLHeaps on macOS must use private storage for now.
-	if (_mtlStorageMode != MTLStorageModePrivate) { return true; }
+#if !MVK_OS_SIMULATOR
+	if (getPhysicalDevice()->getMTLDeviceCapabilities().isAppleGPU) {
+		// MTLHeaps on Apple silicon must use private or shared storage for now.
+		if ( !(_mtlStorageMode == MTLStorageModePrivate ||
+		       _mtlStorageMode == MTLStorageModeShared) ) { return true; }
+	} else
 #endif
-#if MVK_IOS
-	// MTLHeaps on iOS must use private or shared storage for now.
-	if ( !(_mtlStorageMode == MTLStorageModePrivate ||
-		   _mtlStorageMode == MTLStorageModeShared) ) { return true; }
-#endif
+	{
+		// MTLHeaps with immediate-mode GPUs must use private storage for now.
+		if (_mtlStorageMode != MTLStorageModePrivate) { return true; }
+	}
 
 	MTLHeapDescriptor* heapDesc = [MTLHeapDescriptor new];
 	heapDesc.type = MTLHeapTypePlacement;
@@ -206,7 +208,7 @@ bool MVKDeviceMemory::ensureMTLHeap() {
 	// to untracked, since Vulkan uses explicit barriers anyway.
 	heapDesc.hazardTrackingMode = MTLHazardTrackingModeTracked;
 	heapDesc.size = _allocationSize;
-	_mtlHeap = [_device->getMTLDevice() newHeapWithDescriptor: heapDesc];	// retained
+	_mtlHeap = [getMTLDevice() newHeapWithDescriptor: heapDesc];	// retained
 	[heapDesc release];
 	if (!_mtlHeap) { return false; }
 
@@ -221,9 +223,9 @@ bool MVKDeviceMemory::ensureMTLBuffer() {
 
 	if (_mtlBuffer) { return true; }
 
-	NSUInteger memLen = mvkAlignByteCount(_allocationSize, _device->_pMetalFeatures->mtlBufferAlignment);
+	NSUInteger memLen = mvkAlignByteCount(_allocationSize, getMetalFeatures().mtlBufferAlignment);
 
-	if (memLen > _device->_pMetalFeatures->maxMTLBufferSize) { return false; }
+	if (memLen > getMetalFeatures().maxMTLBufferSize) { return false; }
 
 	// If host memory was already allocated, it is copied into the new MTLBuffer, and then released.
 	if (_mtlHeap) {
@@ -246,7 +248,7 @@ bool MVKDeviceMemory::ensureMTLBuffer() {
 	}
 	if (!_mtlBuffer) { return false; }
 	_pMemory = isMemoryHostAccessible() ? _mtlBuffer.contents : nullptr;
-
+	getDevice()->makeResident(_mtlBuffer);
 	propagateDebugName();
 
 	return true;
@@ -258,7 +260,7 @@ bool MVKDeviceMemory::ensureHostMemory() {
 	if (_pMemory) { return true; }
 
 	if ( !_pHostMemory) {
-		size_t memAlign = _device->_pMetalFeatures->mtlBufferAlignment;
+		size_t memAlign = getMetalFeatures().mtlBufferAlignment;
 		NSUInteger memLen = mvkAlignByteCount(_allocationSize, memAlign);
 		int err = posix_memalign(&_pHostMemory, memAlign, memLen);
 		if (err) { return false; }
@@ -284,21 +286,20 @@ MVKDeviceMemory::MVKDeviceMemory(MVKDevice* device,
 								 const VkAllocationCallbacks* pAllocator) : MVKVulkanAPIDeviceObject(device) {
 	// Set Metal memory parameters
 	_vkMemAllocFlags = 0;
-	_vkMemPropFlags = _device->_pMemoryProperties->memoryTypes[pAllocateInfo->memoryTypeIndex].propertyFlags;
-	_mtlStorageMode = mvkMTLStorageModeFromVkMemoryPropertyFlags(_vkMemPropFlags);
+	_vkMemPropFlags = getDeviceMemoryProperties().memoryTypes[pAllocateInfo->memoryTypeIndex].propertyFlags;
+	_mtlStorageMode = getPhysicalDevice()->getMTLStorageModeFromVkMemoryPropertyFlags(_vkMemPropFlags);
 	_mtlCPUCacheMode = mvkMTLCPUCacheModeFromVkMemoryPropertyFlags(_vkMemPropFlags);
 
 	_allocationSize = pAllocateInfo->allocationSize;
 
 	bool willExportMTLBuffer = false;
-	VkImage dedicatedImage = VK_NULL_HANDLE;
+	MVKImage* dedicatedImage = nullptr;
 	VkBuffer dedicatedBuffer = VK_NULL_HANDLE;
-	VkExternalMemoryHandleTypeFlags handleTypes = 0;
 	for (const auto* next = (const VkBaseInStructure*)pAllocateInfo->pNext; next; next = next->pNext) {
 		switch (next->sType) {
 			case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO: {
 				auto* pDedicatedInfo = (VkMemoryDedicatedAllocateInfo*)next;
-				dedicatedImage = pDedicatedInfo->image;
+				dedicatedImage = reinterpret_cast<MVKImage*>(pDedicatedInfo->image);
 				dedicatedBuffer = pDedicatedInfo->buffer;
 				_isDedicated = dedicatedImage || dedicatedBuffer;
 				break;
@@ -322,7 +323,7 @@ MVKDeviceMemory::MVKDeviceMemory(MVKDevice* device,
 			}
 			case VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO: {
 				auto* pExpMemInfo = (VkExportMemoryAllocateInfo*)next;
-				handleTypes = pExpMemInfo->handleTypes;
+				_externalMemoryHandleType = pExpMemInfo->handleTypes;
 				break;
 			}
 			case VK_STRUCTURE_TYPE_IMPORT_METAL_BUFFER_INFO_EXT: {
@@ -345,32 +346,55 @@ MVKDeviceMemory::MVKDeviceMemory(MVKDevice* device,
 				_vkMemAllocFlags = pMemAllocFlagsInfo->flags;
 				break;
 			}
+			case VK_STRUCTURE_TYPE_IMPORT_MEMORY_METAL_HANDLE_INFO_EXT: {
+				const auto* pImportInfo = (VkImportMemoryMetalHandleInfoEXT*)next;
+				_externalMemoryHandleType = pImportInfo->handleType;
+				// This handle type will only be exposed to the user if we actually are supporting heaps
+				if (pImportInfo->handleType & VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLHEAP_BIT_EXT) {
+					[_mtlHeap release];
+					_mtlHeap = [((id<MTLHeap>)pImportInfo->handle) retain];
+					_mtlStorageMode = _mtlHeap.storageMode;
+					_mtlCPUCacheMode = _mtlHeap.cpuCacheMode;
+					_allocationSize = _mtlHeap.size;
+				}
+				else if (pImportInfo->handleType & VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLBUFFER_BIT_EXT) {
+					[_mtlBuffer release];							// guard against dups
+					_mtlBuffer = [((id<MTLBuffer>)pImportInfo->handle) retain];	// retained
+					_mtlStorageMode = _mtlBuffer.storageMode;
+					_mtlCPUCacheMode = _mtlBuffer.cpuCacheMode;
+					_allocationSize = _mtlBuffer.length;
+					_pMemory = isMemoryHostAccessible() ? _mtlBuffer.contents : nullptr;
+				} else if (pImportInfo->handleType & VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLTEXTURE_BIT_EXT) {
+					[_mtlTexture release];
+					_mtlTexture = [((id<MTLTexture>)pImportInfo->handle) retain];
+				}
+			}
 			default:
 				break;
 		}
 	}
 
-	initExternalMemory(handleTypes);	// After setting _isDedicated
+	initExternalMemory(dedicatedImage);	// After setting _isDedicated
 
 	// "Dedicated" means this memory can only be used for this image or buffer.
 	if (dedicatedImage) {
 #if MVK_MACOS
 		if (isMemoryHostCoherent() ) {
-			if (!((MVKImage*)dedicatedImage)->_isLinear) {
+			if (!dedicatedImage->_isLinear) {
 				setConfigurationResult(reportError(VK_ERROR_OUT_OF_DEVICE_MEMORY, "vkAllocateMemory(): Host-coherent VkDeviceMemory objects cannot be associated with optimal-tiling images."));
 			} else {
-				if (!_device->_pMetalFeatures->sharedLinearTextures) {
+				if (!getMetalFeatures().sharedLinearTextures) {
 					// Need to use the managed mode for images.
 					_mtlStorageMode = MTLStorageModeManaged;
 				}
 				// Nonetheless, we need a buffer to be able to map the memory at will.
 				if (!ensureMTLBuffer() ) {
-					setConfigurationResult(reportError(VK_ERROR_OUT_OF_DEVICE_MEMORY, "vkAllocateMemory(): Could not allocate a host-coherent VkDeviceMemory of size %llu bytes. The maximum memory-aligned size of a host-coherent VkDeviceMemory is %llu bytes.", _allocationSize, _device->_pMetalFeatures->maxMTLBufferSize));
+					setConfigurationResult(reportError(VK_ERROR_OUT_OF_DEVICE_MEMORY, "vkAllocateMemory(): Could not allocate a host-coherent VkDeviceMemory of size %llu bytes. The maximum memory-aligned size of a host-coherent VkDeviceMemory is %llu bytes.", _allocationSize, getMetalFeatures().maxMTLBufferSize));
 				}
 			}
 		}
 #endif
-        for (auto& memoryBinding : ((MVKImage*)dedicatedImage)->_memoryBindings) {
+        for (auto& memoryBinding : dedicatedImage->_memoryBindings) {
             _imageMemoryBindings.push_back(memoryBinding);
         }
 		return;
@@ -381,36 +405,57 @@ MVKDeviceMemory::MVKDeviceMemory(MVKDevice* device,
 	}
 
 	// If we can, create a MTLHeap. This should happen before creating the buffer, allowing us to map its contents.
-	if ( !_isDedicated ) {
-		if (!ensureMTLHeap()) {
-			setConfigurationResult(reportError(VK_ERROR_OUT_OF_DEVICE_MEMORY, "vkAllocateMemory(): Could not allocate VkDeviceMemory of size %llu bytes.", _allocationSize));
-			return;
-		}
+	if (!ensureMTLHeap()) {
+		setConfigurationResult(reportError(VK_ERROR_OUT_OF_DEVICE_MEMORY, "vkAllocateMemory(): Could not allocate VkDeviceMemory of size %llu bytes.", _allocationSize));
+		return;
 	}
 
 	// If memory needs to be coherent it must reside in a MTLBuffer, since an open-ended map() must work.
 	// If memory was imported, a MTLBuffer must be created on it.
 	// Or if a MTLBuffer will be exported, ensure it exists.
 	if ((isMemoryHostCoherent() || _isHostMemImported || willExportMTLBuffer) && !ensureMTLBuffer() ) {
-		setConfigurationResult(reportError(VK_ERROR_OUT_OF_DEVICE_MEMORY, "vkAllocateMemory(): Could not allocate a host-coherent or exportable VkDeviceMemory of size %llu bytes. The maximum memory-aligned size of a host-coherent VkDeviceMemory is %llu bytes.", _allocationSize, _device->_pMetalFeatures->maxMTLBufferSize));
+		setConfigurationResult(reportError(VK_ERROR_OUT_OF_DEVICE_MEMORY, "vkAllocateMemory(): Could not allocate a host-coherent or exportable VkDeviceMemory of size %llu bytes. The maximum memory-aligned size of a host-coherent VkDeviceMemory is %llu bytes.", _allocationSize, getMetalFeatures().maxMTLBufferSize));
 	}
 }
 
-void MVKDeviceMemory::initExternalMemory(VkExternalMemoryHandleTypeFlags handleTypes) {
-	if ( !handleTypes ) { return; }
+void MVKDeviceMemory::initExternalMemory(MVKImage* dedicatedImage) {
+	if ( !_externalMemoryHandleType ) { return; }
 	
-	if ( !mvkIsOnlyAnyFlagEnabled(handleTypes, VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLBUFFER_BIT_KHR | VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLTEXTURE_BIT_KHR) ) {
-		setConfigurationResult(reportError(VK_ERROR_INITIALIZATION_FAILED, "vkAllocateMemory(): Only external memory handle types VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLBUFFER_BIT_KHR or VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLTEXTURE_BIT_KHR are supported."));
+	if ( !mvkIsOnlyAnyFlagEnabled(_externalMemoryHandleType, VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLBUFFER_BIT_EXT | VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLTEXTURE_BIT_EXT | VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLHEAP_BIT_EXT) ) {
+		setConfigurationResult(reportError(VK_ERROR_INITIALIZATION_FAILED, "vkAllocateMemory(): Only external memory handle types VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLBUFFER_BIT_EXT, VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLTEXTURE_BIT_EXT or VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLHEAP_BIT_EXT are supported."));
 	}
 
 	bool requiresDedicated = false;
-	if (mvkIsAnyFlagEnabled(handleTypes, VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLBUFFER_BIT_KHR)) {
-		auto& xmProps = getPhysicalDevice()->getExternalBufferProperties(VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLBUFFER_BIT_KHR);
+	if (mvkIsAnyFlagEnabled(_externalMemoryHandleType, VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLHEAP_BIT_EXT)) {
+		auto& xmProps = getPhysicalDevice()->getExternalBufferProperties(VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLHEAP_BIT_EXT);
 		requiresDedicated = requiresDedicated || mvkIsAnyFlagEnabled(xmProps.externalMemoryFeatures, VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT);
+		
+		// Make sure allocation happens at creation time since we may need to export the memory before usage
+		ensureMTLHeap();
 	}
-	if (mvkIsAnyFlagEnabled(handleTypes, VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLTEXTURE_BIT_KHR)) {
-		auto& xmProps = getPhysicalDevice()->getExternalImageProperties(VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLTEXTURE_BIT_KHR);
+	if (mvkIsAnyFlagEnabled(_externalMemoryHandleType, VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLBUFFER_BIT_EXT)) {
+		auto& xmProps = getPhysicalDevice()->getExternalBufferProperties(VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLBUFFER_BIT_EXT);
 		requiresDedicated = requiresDedicated || mvkIsAnyFlagEnabled(xmProps.externalMemoryFeatures, VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT);
+
+		// Make sure allocation happens at creation time since we may need to export the memory before usage
+		ensureMTLBuffer();
+	}
+	if (mvkIsAnyFlagEnabled(_externalMemoryHandleType, VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLTEXTURE_BIT_EXT)) {
+		// Textures require a dedicated allocation according to the spec
+		if (dedicatedImage == nullptr) {
+			setConfigurationResult(reportError(VK_ERROR_INITIALIZATION_FAILED, "vkAllocateMemory(): External memory requires a dedicated VkImage when a export operation will be done."));
+			return;
+		}
+		auto& xmProps = getPhysicalDevice()->getExternalImageProperties(dedicatedImage->getVkFormat(), VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLTEXTURE_BIT_EXT);
+		// Not all texture formats allow to exporting. Vulkan formats that are emulated through the use of multiple MTLTextures
+		// cannot be exported as a single MTLTexture, and therefore will have exporting forbidden.
+		if (!(xmProps.externalMemoryFeatures & VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT)) {
+			setConfigurationResult(reportError(VK_ERROR_INITIALIZATION_FAILED, "vkAllocateMemory(): VkImage's VkFormat does not allow exports."));
+		} else {
+			// Make sure allocation happens at creation time since we may need to export the memory before usage
+			_mtlTexture = [dedicatedImage->getMTLTexture() retain];
+		}
+		requiresDedicated = true;
 	}
 	if (requiresDedicated && !_isDedicated) {
 		setConfigurationResult(reportError(VK_ERROR_INITIALIZATION_FAILED, "vkAllocateMemory(): External memory requires a dedicated VkBuffer or VkImage."));
@@ -425,8 +470,14 @@ MVKDeviceMemory::~MVKDeviceMemory() {
 	auto imgCopies = _imageMemoryBindings;
 	for (auto& img : imgCopies) { img->bindDeviceMemory(nullptr, 0); }
 
-	[_mtlBuffer release];
-	_mtlBuffer = nil;
+	if (_externalMemoryHandleType & VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLTEXTURE_BIT_EXT) {
+		[_mtlTexture release];
+		_mtlTexture = nil;
+	} else {
+		if (_mtlBuffer) getDevice()->removeResidency(_mtlBuffer);
+		[_mtlBuffer release];
+		_mtlBuffer = nil;
+	}
 
 	[_mtlHeap release];
 	_mtlHeap = nil;

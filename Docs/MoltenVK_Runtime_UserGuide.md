@@ -7,7 +7,7 @@
 MoltenVK Runtime User Guide
 ===========================
 
-Copyright (c) 2015-2024 [The Brenwill Workshop Ltd.](http://www.brenwill.com)
+Copyright (c) 2015-2025 [The Brenwill Workshop Ltd.](http://www.brenwill.com)
 
 [comment]: # "This document is written in Markdown (http://en.wikipedia.org/wiki/Markdown) format."
 [comment]: # "For best results, use a Markdown reader."
@@ -56,12 +56,12 @@ distribution package, see the main [`README.md`](../README.md) document in the `
 About **MoltenVK**
 ------------------
 
-**MoltenVK** is a layered implementation of [*Vulkan 1.2*](https://www.khronos.org/vulkan)
+**MoltenVK** is a layered implementation of [*Vulkan 1.3*](https://www.khronos.org/vulkan)
 graphics and compute functionality, that is built on Apple's [*Metal*](https://developer.apple.com/metal)
 graphics and compute framework on *macOS*, *iOS*, and *tvOS*. **MoltenVK** allows you to use *Vulkan*
 graphics and compute functionality to develop modern, cross-platform, high-performance graphical games
 and applications, and to run them across many platforms, including *macOS*, *iOS*, *tvOS*, *Simulators*,
-and *Mac Catalyst* on *macOS 11.0+*.
+and *Mac Catalyst*.
 
 *Metal* uses a different shading language, the *Metal Shading Language (MSL)*, than
 *Vulkan*, which uses *SPIR-V*. **MoltenVK** automatically converts your *SPIR-V* shaders
@@ -174,10 +174,11 @@ Open the *Build Phases* tab and open the *Link Binary With Libraries* list.
    - `Metal.framework`
    - `Foundation.framework`.
    - `QuartzCore.framework`
+   - `CoreGraphics.framework`
+   - `IOSurface.framework`
    - `IOKit.framework` (*macOS*)
+   - `AppKit.framework` (*macOS*)
    - `UIKit.framework` (*iOS* or *tvOS*)
-   - `IOSurface.framework` (*macOS*, or *iOS* if `IPHONEOS_DEPLOYMENT_TARGET` is at least `iOS 11.0`,
-	  or *tvOS* if `TVOS_DEPLOYMENT_TARGET` is at least `tvOS 11.0`)
 
 
 <a name="requirements"></a>
@@ -186,16 +187,10 @@ Open the *Build Phases* tab and open the *Link Binary With Libraries* list.
 **MoltenVK** references the latest *Apple SDK* frameworks. To access these frameworks when building
 your app, and to avoid build errors, be sure to use the latest publicly available version of *Xcode*.
 
->***Note:*** To support `IOSurfaces` on *iOS* or *tvOS*, any app that uses **MoltenVK** must be
-built with a minimum **iOS Deployment Target** (aka `IPHONEOS_DEPLOYMENT_TARGET `) build setting
-of `iOS 11.0` or greater, or a minimum **tvOS Deployment Target** (aka `TVOS_DEPLOYMENT_TARGET `)
-build setting of `tvOS 11.0` or greater.
-
 Once built, your app integrating the **MoltenVK** libraries can be run on *macOS*, *iOS* or *tvOS*
 devices that support *Metal*, or on the *Xcode* *iOS Simulator* or *tvOS Simulator*.
 
-- At runtime, **MoltenVK** requires at least *macOS 10.11*, *iOS 9*, or *tvOS 9*
-  (or *iOS 11* or *tvOS 11* if using `IOSurfaces`).
+- At runtime, **MoltenVK** requires at least *macOS 10.15*, *iOS 13*, or *tvOS 13*.
 - Information on *macOS* devices that are compatible with *Metal* can be found in
   [this article](http://www.idownloadblog.com/2015/06/22/how-to-find-mac-el-capitan-metal-compatible).
 - Information on *iOS* devices that are compatible with *Metal* can be found in
@@ -256,15 +251,27 @@ In addition to core *Vulkan* functionality, **MoltenVK**  also supports the foll
 - `VK_KHR_get_memory_requirements2`
 - `VK_KHR_get_physical_device_properties2`
 - `VK_KHR_get_surface_capabilities2`
+- `VK_KHR_global_priority`
 - `VK_KHR_imageless_framebuffer`
+- `VK_EXT_image_2d_view_of_3d`
+  - *Requires `MVK_CONFIG_USE_MTLHEAP` to be active.*
 - `VK_KHR_image_format_list`
 - `VK_KHR_incremental_present`
+- `VK_KHR_index_type_uint8`
+- `VK_KHR_load_store_op_none`
 - `VK_KHR_maintenance1`
 - `VK_KHR_maintenance2`
 - `VK_KHR_maintenance3`
+- `VK_KHR_maintenance4`
+- `VK_KHR_maintenance5`
+- `VK_KHR_maintenance6`
+- `VK_KHR_maintenance7`
+- `VK_KHR_maintenance8`
 - `VK_KHR_map_memory2`
 - `VK_KHR_multiview`
 - `VK_KHR_portability_subset`
+- `VK_KHR_present_id`
+- `VK_KHR_present_wait`
 - `VK_KHR_push_descriptor`
 - `VK_KHR_relaxed_block_layout`
 - `VK_KHR_sampler_mirror_clamp_to_edge`
@@ -272,15 +279,23 @@ In addition to core *Vulkan* functionality, **MoltenVK**  also supports the foll
 - `VK_KHR_sampler_ycbcr_conversion`
 - `VK_KHR_separate_depth_stencil_layouts`
 - `VK_KHR_shader_draw_parameters`
+- `VK_KHR_shader_expect_assume`
 - `VK_KHR_shader_float_controls`
 - `VK_KHR_shader_float16_int8`
 - `VK_KHR_shader_integer_dot_product`
+- `VK_KHR_shader_maximal_reconvergence`
 - `VK_KHR_shader_non_semantic_info`
+- `VK_KHR_shader_relaxed_extended_instruction`
 - `VK_KHR_shader_subgroup_extended_types`
   - *Requires Metal 2.1 on Mac or Metal 2.2 and Apple family 4 on iOS.*
+- `VK_KHR_shader_subgroup_rotate`
+  - *Requires Metal 2.1 on Mac or Metal 2.2 and Apple family 4 on iOS.*
+- `VK_KHR_shader_subgroup_uniform_control_flow`
+- `VK_KHR_shader_terminate_invocation`
 - `VK_KHR_spirv_1_4`
 - `VK_KHR_storage_buffer_storage_class`
 - `VK_KHR_surface`
+- `VK_KHR_surface_protected_capabilities`
 - `VK_KHR_swapchain`
 - `VK_KHR_swapchain_mutable_format`
 - `VK_KHR_synchronization2`
@@ -288,6 +303,8 @@ In addition to core *Vulkan* functionality, **MoltenVK**  also supports the foll
 - `VK_KHR_uniform_buffer_standard_layout`
 - `VK_KHR_variable_pointers`
 - `VK_KHR_vertex_attribute_divisor`
+- `VK_KHR_vulkan_memory_model`
+- `VK_KHR_zero_initialize_workgroup_memory`
 - `VK_EXT_4444_formats`
   - *Requires 16-bit formats and either native texture swizzling or manual swizzling to be enabled.*
 - `VK_EXT_buffer_device_address`
@@ -297,6 +314,7 @@ In addition to core *Vulkan* functionality, **MoltenVK**  also supports the foll
 - `VK_EXT_debug_marker`
 - `VK_EXT_debug_report`
 - `VK_EXT_debug_utils`
+- `VK_EXT_depth_clip_control`
 - `VK_EXT_descriptor_indexing`
   - *Initial release limited to Metal Tier 1: 96/128 textures,
     16 samplers, except macOS 11.0 (Big Sur) or later, or on older versions of macOS using
@@ -308,21 +326,26 @@ In addition to core *Vulkan* functionality, **MoltenVK**  also supports the foll
 - `VK_EXT_extended_dynamic_state3`
   - *Metal does not support `VK_POLYGON_MODE_POINT`*
 - `VK_EXT_external_memory_host`
+- `VK_EXT_external_memory_metal`
 - `VK_EXT_fragment_shader_interlock`
   - *Requires Metal 2.0 and Raster Order Groups.*
 - `VK_EXT_hdr_metadata`
   - *macOS only.*
 - `VK_EXT_headless_surface`
+- `VK_EXT_host_image_copy`
 - `VK_EXT_host_query_reset`
 - `VK_EXT_image_robustness`
+- `VK_EXT_index_type_uint8`
 - `VK_EXT_inline_uniform_block`
 - `VK_EXT_layer_settings`
+- `VK_EXT_load_store_op_none`
 - `VK_EXT_memory_budget`
   - *Requires Metal 2.0.*
 - `VK_EXT_metal_objects`
 - `VK_EXT_metal_surface`
 - `VK_EXT_pipeline_creation_cache_control`
 - `VK_EXT_pipeline_creation_feedback`
+- `VK_EXT_pipeline_robustness`
 - `VK_EXT_post_depth_coverage`
   - *iOS and macOS, requires family 4 (A11) or better Apple GPU.*
 - `VK_EXT_private_data `
@@ -351,6 +374,7 @@ In addition to core *Vulkan* functionality, **MoltenVK**  also supports the foll
   - *Requires Metal 2.0.*
 - `VK_EXT_texture_compression_astc_hdr`
   - *iOS and macOS, requires family 6 (A13) or better Apple GPU.*
+- `VK_EXT_tooling_info`
 - `VK_MVK_ios_surface`
   - *Obsolete. Use `VK_EXT_metal_surface` instead.*
 - `VK_MVK_macos_surface`
@@ -366,7 +390,6 @@ In addition to core *Vulkan* functionality, **MoltenVK**  also supports the foll
 - `VK_INTEL_shader_integer_functions2`
 - `VK_NV_fragment_shader_barycentric`
   - *Requires Metal 2.2 on Mac or Metal 2.3 on iOS.*
-- `VK_NV_glsl_shader`
 
 In order to visibly display your content on *macOS*, *iOS*, or *tvOS*, you must enable the
 `VK_EXT_metal_surface` extension, and use the function defined in that extension to create a

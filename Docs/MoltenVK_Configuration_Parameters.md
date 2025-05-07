@@ -7,7 +7,7 @@
 MoltenVK Configuration Parameters
 =================================
 
-Copyright (c) 2015-2024 [The Brenwill Workshop Ltd.](http://www.brenwill.com)
+Copyright (c) 2015-2025 [The Brenwill Workshop Ltd.](http://www.brenwill.com)
 
 [comment]: # "This document is written in Markdown (http://en.wikipedia.org/wiki/Markdown) format."
 [comment]: # "For best results, use a Markdown reader."
@@ -85,17 +85,27 @@ extensions will be advertised. A value of zero means no extensions will be adver
 #### MVK_CONFIG_API_VERSION_TO_ADVERTISE
 
 ##### Type: UInt32
-##### Default: `4202496`
+##### Default: `4206592` (decimal number for `VK_API_VERSION_1_3`)
 
 Controls the _Vulkan_ API version that **MoltenVK** should advertise in `vkEnumerateInstanceVersion()`,
 after **MoltenVK** adds the `VK_HEADER_VERSION` component.
 
 Set this value to one of:
 
-- `4202496` (decimal number for `VK_API_VERSION_1_2`)
-- `4198400` (decimal number for `VK_API_VERSION_1_1`)
-- `4194304` (decimal number for `VK_API_VERSION_1_0`)
+- `4206592`  (decimal number for `VK_API_VERSION_1_3`)
+- `4202496`  (decimal number for `VK_API_VERSION_1_2`)
+- `4198400`  (decimal number for `VK_API_VERSION_1_1`)
+- `4194304`  (decimal number for `VK_API_VERSION_1_0`)
 
+or one of the shorthand versions:
+
+- `13`  (`VK_API_VERSION_1_3`)
+- `12`  (`VK_API_VERSION_1_2`)
+- `11`  (`VK_API_VERSION_1_1`)
+- `10`  (`VK_API_VERSION_1_0`)
+
+The shorthand versions are a user convenience, and  **MoltenVK** will 
+convert the shorthand value to the actual Vulkan version value upon setting.
 
 ---------------------------------------
 #### MVK_CONFIG_AUTO_GPU_CAPTURE_OUTPUT_FILE
@@ -122,17 +132,24 @@ a user's home directory. This feature requires _Metal 2.2 (macOS 10.15+, iOS/tvO
 - `0`: No automatic GPU capture.
 - `1`: Automatically capture all GPU activity during the lifetime of a `VkDevice`.
 - `2`: Automatically capture all GPU activity during the rendering and presentation of the first frame.
-  The queue for which the frame is captured is identifed by the values of the
-  `MVK_CONFIG_DEFAULT_GPU_CAPTURE_SCOPE_QUEUE_FAMILY_INDEX` and
-  `MVK_CONFIG_DEFAULT_GPU_CAPTURE_SCOPE_QUEUE_INDEX` configuration parameters.
+- `3`: Automatically capture all GPU activity while signaled on a temporary named pipe. Automatically 
+  begins recording whenever the pipe is not empty, and records as many frames as the pipe contains bytes.
 
 ##### Default: `0`
 
 Controls whether _Metal_ should run an automatic GPU capture without the user having to
 trigger it manually via the _Xcode_ user interface, and controls the scope under which
 that GPU capture will occur. This is useful when trying to capture a one-shot GPU trace,
-such as when running a _Vulkan_ CTS test case. For the automatic GPU capture to occur, the
-_Xcode_ scheme under which the app is run must have the _Metal_ GPU capture option enabled.
+such as when running a _Vulkan_ CTS test case, or for triggering the capture via an
+IPC on a temporary named pipe. 
+
+For values `2` and `3`, the queue for which the frames are captured is identifed by 
+the values of the `MVK_CONFIG_DEFAULT_GPU_CAPTURE_SCOPE_QUEUE_FAMILY_INDEX` and 
+`MVK_CONFIG_DEFAULT_GPU_CAPTURE_SCOPE_QUEUE_INDEX` configuration parameters.
+
+For the automatic GPU capture to occur, the environment variable `MTL_CAPTURE_ENABLED` must be enabled,
+or, if running the app from _Xcode_, the _GPU Frame Capture_ option can be set to _Metal_.
+
 To manually trigger a GPU capture via the _Xcode_ user interface, leave this parameter at `0`.
 
 
@@ -318,19 +335,6 @@ You can also use the `MVK_CONFIG_ACTIVITY_PERFORMANCE_LOGGING_STYLE` and
 
 
 ---------------------------------------
-#### MVK_CONFIG_PREALLOCATE_DESCRIPTORS
-
-##### Type: Boolean
-##### Default: `1`
-
-Controls whether **MoltenVK** should preallocate memory in each `VkDescriptorPool` according
-to the values of the `VkDescriptorPoolSize` parameters. Doing so may improve descriptor set
-allocation performance and memory stability at a cost of preallocated application memory.
-If this setting is disabled, the descriptors required for a descriptor set will be individually
-dynamically allocated in application memory when the descriptor set itself is allocated.
-
-
----------------------------------------
 #### MVK_CONFIG_PREFILL_METAL_COMMAND_BUFFERS
 
 ##### Type: Enumeration
@@ -429,6 +433,28 @@ flip the Y-axis of each vertex, as the _Vulkan_ Y-axis is the inverse of *OpenGL
 
 An alternate way to reverse the Y-axis is to employ a negative Y-axis value on
 the viewport, in which case this parameter can be disabled.
+
+
+---------------------------------------
+#### MVK_CONFIG_SHADER_DUMP_DIR
+
+##### Type: String
+##### Default: `""`
+
+_(The default value is an empty string)._
+
+If not empty, **MoltenVK** will dump all SPIR-V shaders, compiled MSL shaders, and pipeline shader lists to the given directory.
+The directory will be non-recursively created if it doesn't already exist.
+
+
+---------------------------------------
+#### MVK_CONFIG_SHADER_LOG_ESTIMATED_GLSL
+
+##### Type: Boolean
+##### Default: `0`
+
+If the `MVK_CONFIG_DEBUG` parameter is enabled, and this parameter is enabled, when 
+SPIR-V code is converted to MSL, an estimate of the equivalent GLSL shader will be logged.
 
 
 ---------------------------------------
@@ -609,37 +635,50 @@ cleared via a call to the `vkTrimCommandPoolKHR()` command.
 ---------------------------------------
 #### MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS
 
-##### Type: Enumeration
-- `0`: Don't use _Metal_ Argument Buffers.
-- `1`: Use _Metal_ Argument Buffers for all pipelines.
-- `2`: Use _Metal_ Argument Buffers only if the `VK_EXT_descriptor_indexing` extension is enabled.
-
-##### Default: `0`
+##### Type: Boolean
+##### Default: `1`
 
 Controls whether **MoltenVK** should use _Metal_ argument buffers for resources defined in descriptor sets,
 if _Metal_ argument buffers are supported on the platform. Using _Metal_ argument buffers dramatically
 increases the number of buffers, textures and samplers that can be bound to a pipeline shader, and in most
 cases improves performance.
 
-_**NOTE:**_ Currently, _Metal_ argument buffer support is in beta stage, and is only supported on _macOS 11.0+_,
-or on older versions of _macOS_ using an _Intel_ GPU. _Metal_ argument buffers support is not available on _iOS_ or _tvOS_.
-Development to support _iOS_ and _tvOS_ and a wider combination of GPU's on older _macOS_ versions is under way.
+
+---------------------------------------
+#### MVK_CONFIG_USE_METAL_PRIVATE_API
+
+##### Type: Boolean
+##### Default: Value of `MVK_USE_METAL_PRIVATE_API`
+
+If enabled, **MoltenVK** will _use_ private interfaces exposed by _Metal_ to implement _Vulkan_
+features that are difficult to support otherwise.
+
+Unlike `MVK_USE_METAL_PRIVATE_API`, this setting may be overridden at run time.
+
+This option is not available unless **MoltenVK** was built with `MVK_USE_METAL_PRIVATE_API` set to `1`.
 
 
 ---------------------------------------
 #### MVK_CONFIG_USE_MTLHEAP
 
-##### Type: Boolean
-##### Default: `0`
+##### Type: Enumeration
+- `0`: Do not use `MTLHeap` for allocating resources.
+- `1`: Use `MTLHeap` for allocating resources, where safe to do so. On AMD GPUs, this is the same as `0`, 
+  due to potential challenges with `MTLHeap` usage on those platforms. On other GPUs this is the same as `2`.
+- `2`: Use `MTLHeap` for allocating resources.
 
-Controls whether **MoltenVK** should use `MTLHeaps` for allocating textures and buffers from device memory.
-If this setting is enabled, and placement `MTLHeaps` are available on the platform, **MoltenVK** will allocate a
-placement `MTLHeap` for each `VkDeviceMemory` instance, and allocate textures and buffers from that placement heap.
-If this parameter is disabled, **MoltenVK** will allocate textures and buffers from general device memory.
+##### Default: `1`
 
-Apple recommends that `MTLHeaps` should only be used for specific requirements such as aliasing or hazard tracking,
-and **MoltenVK** testing has shown that allocating multiple textures of different types or usages from one `MTLHeap`
-can occassionally cause corruption issues under certain circumstances.
+Controls whether **MoltenVK** should use `MTLHeap` for allocating textures and buffers from device memory.
+If this setting is active, **MoltenVK** will allocate a placement `MTLHeap` for each `VkDeviceMemory` instance, 
+and allocate textures and buffers from that placement heap. If this parameter is not active, **MoltenVK** will 
+allocate textures and buffers from general device memory.
+
+Vulkan extension `VK_EXT_image_2d_view_of_3d` requires this parameter to be active, 
+to allow aliasing of texture memory between the 3D image and the 2D view.
+
+To force `MTLHeap` to be used on AMD GPUs, set this parameter to `2`. 
+To disable the use of `MTLHeap` on any GPU, set this parameter to `0`.
 
 
 ---------------------------------------
@@ -659,20 +698,5 @@ can occassionally cause corruption issues under certain circumstances.
 
 Determines the style used to implement _Vulkan_ semaphore (`VkSemaphore`) functionality in _Metal_.
 
-
 In the special case of `VK_SEMAPHORE_TYPE_TIMELINE` semaphores, **MoltenVK** will always use
 `MTLSharedEvent` if it is available on the platform, regardless of the value of this parameter.
-
-
----------------------------------------
-#### MVK_CONFIG_USE_METAL_PRIVATE_API
-
-##### Type: Boolean
-##### Default: Value of `MVK_USE_METAL_PRIVATE_API`
-
-If enabled, **MoltenVK** will _use_ private interfaces exposed by _Metal_ to implement _Vulkan_
-features that are difficult to support otherwise.
-
-Unlike `MVK_USE_METAL_PRIVATE_API`, this setting may be overridden at run time.
-
-This option is not available unless MoltenVK were built with `MVK_USE_METAL_PRIVATE_API` set to `1`.

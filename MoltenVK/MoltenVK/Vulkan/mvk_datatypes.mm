@@ -1,7 +1,7 @@
 /*
  * mvk_datatypes.mm
  *
- * Copyright (c) 2015-2024 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -590,6 +590,8 @@ MVK_PUBLIC_SYMBOL MTLLoadAction mvkMTLLoadActionFromVkAttachmentLoadOp(VkAttachm
 
 MTLLoadAction mvkMTLLoadActionFromVkAttachmentLoadOpInObj(VkAttachmentLoadOp vkLoadOp, MVKBaseObject* mvkObj) {
 	switch (vkLoadOp) {
+		// Metal does not support VK_ATTACHMENT_LOAD_OP_NONE. Next best option is load.
+		case VK_ATTACHMENT_LOAD_OP_NONE:
 		case VK_ATTACHMENT_LOAD_OP_LOAD:		return MTLLoadActionLoad;
 		case VK_ATTACHMENT_LOAD_OP_CLEAR:		return MTLLoadActionClear;
 		case VK_ATTACHMENT_LOAD_OP_DONT_CARE:	return MTLLoadActionDontCare;
@@ -608,8 +610,13 @@ MVK_PUBLIC_SYMBOL MTLStoreAction mvkMTLStoreActionFromVkAttachmentStoreOp(VkAtta
 // If we need to resolve, but the format doesn't support it, we must store the attachment so we can run a post-renderpass compute shader to perform the resolve.
 MTLStoreAction mvkMTLStoreActionFromVkAttachmentStoreOpInObj(VkAttachmentStoreOp vkStoreOp, bool hasResolveAttachment, bool canResolveFormat, MVKBaseObject* mvkObj) {
 	switch (vkStoreOp) {
-		case VK_ATTACHMENT_STORE_OP_STORE:		return hasResolveAttachment && canResolveFormat ? MTLStoreActionStoreAndMultisampleResolve : MTLStoreActionStore;
-		case VK_ATTACHMENT_STORE_OP_DONT_CARE:	return hasResolveAttachment ? (canResolveFormat ? MTLStoreActionMultisampleResolve : MTLStoreActionStore) : MTLStoreActionDontCare;
+		// Metal does not support VK_ATTACHMENT_STORE_OP_NONE. Next best option is store.
+		case VK_ATTACHMENT_STORE_OP_NONE:
+		case VK_ATTACHMENT_STORE_OP_STORE:
+			return hasResolveAttachment && canResolveFormat ? MTLStoreActionStoreAndMultisampleResolve : MTLStoreActionStore;
+
+		case VK_ATTACHMENT_STORE_OP_DONT_CARE:
+			return hasResolveAttachment ? (canResolveFormat ? MTLStoreActionMultisampleResolve : MTLStoreActionStore) : MTLStoreActionDontCare;
 
 		default:
 			MVKBaseObject::reportError(mvkObj, VK_ERROR_FORMAT_NOT_SUPPORTED, "VkAttachmentStoreOp value %d is not supported.", vkStoreOp);
@@ -728,6 +735,8 @@ MVK_PUBLIC_SYMBOL MTLWinding mvkMTLWindingFromVkFrontFace(VkFrontFace vkWinding)
 MVK_PUBLIC_SYMBOL MTLIndexType mvkMTLIndexTypeFromVkIndexType(VkIndexType vkIdxType) {
 	switch (vkIdxType) {
 		case VK_INDEX_TYPE_UINT32:	return MTLIndexTypeUInt32;
+		// Converted to Uint16 internally.
+		case VK_INDEX_TYPE_UINT8:
 		case VK_INDEX_TYPE_UINT16:	return MTLIndexTypeUInt16;
 		default:					return MTLIndexTypeUInt16;
 	}
@@ -881,31 +890,6 @@ MVK_PUBLIC_SYMBOL CGRect mvkCGRectFromVkRectLayerKHR(VkRectLayerKHR vkRect) {
 
 #pragma mark -
 #pragma mark Memory options
-
-MVK_PUBLIC_SYMBOL MTLStorageMode mvkMTLStorageModeFromVkMemoryPropertyFlags(VkMemoryPropertyFlags vkFlags) {
-
-	// If not visible to the host, use Private, or Memoryless if available and lazily allocated.
-	if ( !mvkAreAllFlagsEnabled(vkFlags, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) ) {
-#if MVK_APPLE_SILICON
-		if (mvkAreAllFlagsEnabled(vkFlags, VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT)) {
-			return MTLStorageModeMemoryless;
-		}
-#endif
-		return MTLStorageModePrivate;
-	}
-
-	// If visible to the host and coherent: Shared
-	if (mvkAreAllFlagsEnabled(vkFlags, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-		return MTLStorageModeShared;
-	}
-
-	// If visible to the host, and not coherent: Managed on macOS, Shared on iOS
-#if MVK_MACOS
-	return MTLStorageModeManaged;
-#else
-	return MTLStorageModeShared;
-#endif
-}
 
 MVK_PUBLIC_SYMBOL MTLCPUCacheMode mvkMTLCPUCacheModeFromVkMemoryPropertyFlags(VkMemoryPropertyFlags vkFlags) {
 	return MTLCPUCacheModeDefaultCache;

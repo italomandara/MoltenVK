@@ -1,7 +1,7 @@
 /*
  * MVKBuffer.h
  *
- * Copyright (c) 2015-2024 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ public:
 	VkResult getMemoryRequirements(VkMemoryRequirements* pMemoryRequirements);
 
 	/** Returns the memory requirements of this resource by populating the specified structure. */
-	VkResult getMemoryRequirements(const void* pInfo, VkMemoryRequirements2* pMemoryRequirements);
+	VkResult getMemoryRequirements(VkMemoryRequirements2* pMemoryRequirements);
 
 	/** Binds this resource to the specified offset within the specified memory allocation. */
 	VkResult bindDeviceMemory(MVKDeviceMemory* mvkMem, VkDeviceSize memOffset) override;
@@ -62,7 +62,7 @@ public:
 								  MVKCommandUse cmdUse);
 
     /** Returns the intended usage of this buffer. */
-    VkBufferUsageFlags getUsage() const { return _usage; }
+    VkBufferUsageFlags2 getUsage() const { return _usage; }
 
 
 #pragma mark Metal
@@ -99,7 +99,7 @@ protected:
 	void initExternalMemory(VkExternalMemoryHandleTypeFlags handleTypes);
 	void detachMemory();
 
-	VkBufferUsageFlags _usage;
+	VkBufferUsageFlags2 _usage;
 	bool _isHostCoherentTexelBuffer = false;
     id<MTLBuffer> _mtlBufferCache = nil;
 	id<MTLBuffer> _mtlBuffer = nil;
@@ -138,12 +138,13 @@ protected:
 	void propagateDebugName() override;
 	void detachMemory();
 
-    MVKBuffer* _buffer;
-    NSUInteger _offset;
+	MVKBuffer* _buffer;
+	NSUInteger _offset;
+	VkBufferUsageFlags2 _usage;
 	id<MTLTexture> _mtlTexture;
 	MTLPixelFormat _mtlPixelFormat;
 	NSUInteger _mtlBytesPerRow;
-    VkExtent2D _textureSize;
+	VkExtent2D _textureSize;
 	std::mutex _lock;
 };
 

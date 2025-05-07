@@ -1,7 +1,7 @@
 /*
  * MVKQueue.h
  *
- * Copyright (c) 2015-2024 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@
 #include "MVKSync.h"
 #include "MVKSmallVector.h"
 #include <mutex>
+#include <condition_variable>
 
 #import <Metal/Metal.h>
 
@@ -112,7 +113,7 @@ public:
 #pragma mark Construction
 	
 	/** Constructs an instance for the device and queue family. */
-	MVKQueue(MVKDevice* device, MVKQueueFamily* queueFamily, uint32_t index, float priority);
+	MVKQueue(MVKDevice* device, MVKQueueFamily* queueFamily, uint32_t index, float priority, VkQueueGlobalPriority globalPriority);
 
 	~MVKQueue() override;
 
@@ -147,6 +148,9 @@ protected:
 	MVKQueueFamily* _queueFamily;
 	std::string _name;
 	dispatch_queue_t _execQueue;
+	std::mutex _execQueueMutex;
+	std::condition_variable _execQueueConditionVariable;
+	uint32_t _execQueueJobCount = 0;
 	id<MTLCommandQueue> _mtlQueue = nil;
 	NSString* _mtlCmdBuffLabelBeginCommandBuffer = nil;
 	NSString* _mtlCmdBuffLabelQueueSubmit = nil;
@@ -155,8 +159,10 @@ protected:
 	NSString* _mtlCmdBuffLabelQueueWaitIdle = nil;
 	NSString* _mtlCmdBuffLabelAcquireNextImage = nil;
 	NSString* _mtlCmdBuffLabelInvalidateMappedMemoryRanges = nil;
+	NSString* _mtlCmdBuffLabelCopyImageToMemory = nil;
 	MVKGPUCaptureScope* _submissionCaptureScope = nil;
 	float _priority;
+	VkQueueGlobalPriority _globalPriority;
 	uint32_t _index;
 };
 
@@ -183,7 +189,7 @@ public:
 } MVKSemaphoreSubmitInfo;
 
 /** This is an abstract class for an operation that can be submitted to an MVKQueue. */
-class MVKQueueSubmission : public MVKBaseObject, public MVKConfigurableMixin {
+class MVKQueueSubmission : public MVKBaseDeviceObject, public MVKConfigurableMixin {
 
 public:
 

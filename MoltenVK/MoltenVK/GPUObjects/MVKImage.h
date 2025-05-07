@@ -1,7 +1,7 @@
 /*
  * MVKImage.h
  *
- * Copyright (c) 2015-2024 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -91,6 +91,7 @@ protected:
     id<MTLTexture> _mtlTexture;
     std::unordered_map<NSUInteger, id<MTLTexture>> _mtlTextureViews;
     MVKSmallVector<MVKImageSubresource, 1> _subresources;
+    HeapAllocation _heapAllocation;
 };
 
 
@@ -111,7 +112,7 @@ public:
     VkResult getMemoryRequirements(VkMemoryRequirements* pMemoryRequirements);
 
     /** Returns the memory requirements of this resource by populating the specified structure. */
-    VkResult getMemoryRequirements(const void* pInfo, VkMemoryRequirements2* pMemoryRequirements);
+    VkResult getMemoryRequirements(VkMemoryRequirements2* pMemoryRequirements);
 
     /** Binds this resource to the specified offset within the specified memory allocation. */
     VkResult bindDeviceMemory(MVKDeviceMemory* mvkMem, VkDeviceSize memOffset) override;
@@ -200,22 +201,22 @@ public:
     /** Returns the number of samples for each pixel of this image. */
     VkSampleCountFlagBits getSampleCount() { return _samples; }
 
-	 /** 
-	  * Returns the number of bytes per image row at the specified zero-based mip level.
-      * For non-compressed formats, this is the number of bytes in a row of texels.
-      * For compressed formats, this is the number of bytes in a row of blocks, which
-      * will typically span more than one row of texels.
-	  */
-	VkDeviceSize getBytesPerRow(uint8_t planeIndex, uint32_t mipLevel);
-
+	/**
+	 * Returns the number of bytes per image row for the mip with the given width.
+	 * For non-compressed formats, this is the number of bytes in a row of texels.
+	 * For compressed formats, this is the number of bytes in a row of blocks, which
+	 * will typically span more than one row of texels.
+	 */
+	VkDeviceSize getBytesPerRow(MTLPixelFormat planePixelFormat, uint32_t mipWidth);
+	
 	/**
 	 * Returns the number of bytes per image layer (for cube, array, or 3D images) 
-	 * at the specified zero-based mip level. This value will normally be the number
-	 * of bytes per row (as returned by the getBytesPerRow() function, multiplied by 
+	 * for the mip with the given extent. This value will normally be the number
+	 * of bytes per row (as returned by the getBytesPerRow() function, multiplied by
 	 * the height of each 2D image.
 	 */
-	VkDeviceSize getBytesPerLayer(uint8_t planeIndex, uint32_t mipLevel);
-    
+	VkDeviceSize getBytesPerLayer(uint8_t planeIndex, VkExtent3D mipExtent);
+	
     /** Returns the number of planes of this image view. */
     uint8_t getPlaneCount() { return _planes.size(); }
 
@@ -226,9 +227,14 @@ public:
 	VkResult getSubresourceLayout(const VkImageSubresource* pSubresource,
 								  VkSubresourceLayout* pLayout);
 
+	/** Populates the specified layout for the specified sub-resource. */
+	VkResult getSubresourceLayout(const VkImageSubresource2* pSubresource,
+								  VkSubresourceLayout2* pLayout);
+
     /** Populates the specified transfer image descriptor data structure. */
     void getTransferDescriptorData(MVKImageDescriptorData& imgData);
 
+    MTLTextureDescriptor* newMTLTextureDescriptor(uint32_t planeIndex);
 
 #pragma mark Resource memory
 
@@ -236,7 +242,9 @@ public:
 	VkResult getMemoryRequirements(VkMemoryRequirements* pMemoryRequirements, uint8_t planeIndex);
 
 	/** Returns the memory requirements of this resource by populating the specified structure. */
-	VkResult getMemoryRequirements(const void* pInfo, VkMemoryRequirements2* pMemoryRequirements);
+	VkResult getMemoryRequirements(const VkImageMemoryRequirementsInfo2* pInfo, VkMemoryRequirements2* pMemoryRequirements);
+
+	VkResult getMemoryRequirements(VkMemoryRequirements2* pMemoryRequirements, uint8_t planeIndex);
 
 	/** Binds this resource to the specified offset within the specified memory allocation. */
 	virtual VkResult bindDeviceMemory(MVKDeviceMemory* mvkMem, VkDeviceSize memOffset, uint8_t planeIndex);
@@ -251,6 +259,16 @@ public:
 
     /** Flush underlying buffer memory into the image if necessary */
     void flushToDevice(VkDeviceSize offset, VkDeviceSize size);
+
+	/** Host-copy the content of an image to another using the CPU. */
+	static VkResult copyImageToImage(const VkCopyImageToImageInfo* pCopyImageToImageInfo);
+
+	/** Host-copy the content of an image to memory using the CPU. */
+	VkResult copyImageToMemory(const VkCopyImageToMemoryInfo* pCopyImageToMemoryInfo);
+
+	/** Host-copy the content of an image from memory using the CPU. */
+	VkResult copyMemoryToImage(const VkCopyMemoryToImageInfo* pCopyMemoryToImageInfo);
+
 
 #pragma mark Metal
 
@@ -320,6 +338,8 @@ public:
 	/** Returns the Metal CPU cache mode used by this image. */
 	MTLCPUCacheMode getMTLCPUCacheMode();
 
+	HeapAllocation* getHeapAllocation(uint32_t planeIndex);
+
 
 #pragma mark Construction
 
@@ -348,6 +368,13 @@ protected:
 	uint8_t getMemoryBindingCount() const { return (uint8_t)_memoryBindings.size(); }
 	uint8_t getMemoryBindingIndex(uint8_t planeIndex) const;
 	MVKImageMemoryBinding* getMemoryBinding(uint8_t planeIndex);
+	template<typename CopyInfo> VkResult copyContent(const CopyInfo* pCopyInfo);
+	VkResult copyContent(id<MTLTexture> mtlTex,
+						 VkMemoryToImageCopy imgRgn, uint32_t mipLevel, uint32_t slice,
+						 void* pImgBytes, size_t rowPitch, size_t depthPitch);
+	VkResult copyContent(id<MTLTexture> mtlTex,
+						 VkImageToMemoryCopy imgRgn, uint32_t mipLevel, uint32_t slice,
+						 void* pImgBytes, size_t rowPitch, size_t depthPitch);
 
     MVKSmallVector<MVKImageMemoryBinding*, 3> _memoryBindings;
     MVKSmallVector<MVKImagePlane*, 3> _planes;
@@ -374,6 +401,7 @@ protected:
 	bool _hasMutableFormat;
 	bool _shouldSupportAtomics;
 	bool _isLinearForAtomics;
+	bool _is2DViewOn3DImageCompatible = false;
 };
 
 
@@ -424,10 +452,10 @@ typedef struct  {
 	MVKPresentableSwapchainImage* presentableImage;
 	MVKQueue* queue;				// The queue on which the vkQueuePresentKHR() command was executed.
 	MVKFence* fence;				// VK_EXT_swapchain_maintenance1 fence signaled when resources can be destroyed
-	uint64_t desiredPresentTime;  	// VK_GOOGLE_display_timing desired presentation time in nanoseconds
-	uint32_t presentID;           	// VK_GOOGLE_display_timing presentID
+	uint64_t presentId;				// VK_KHR_present_id presentId
+	uint64_t desiredPresentTime;	// VK_GOOGLE_display_timing desired presentation time in nanoseconds
+	uint32_t presentIDGoogle;	// VK_GOOGLE_display_timing presentID
 	VkPresentModeKHR presentMode;	// VK_EXT_swapchain_maintenance1 present mode specialization
-	bool hasPresentTime;      		// Keep track of whether presentation included VK_GOOGLE_display_timing
 } MVKImagePresentInfo;
 
 /** Tracks a semaphore and fence for later signaling. */
@@ -484,6 +512,7 @@ protected:
 	MVKSmallVector<MVKSwapchainSignaler, 1> _availabilitySignalers;
 	MVKSwapchainSignaler _preSignaler = {};
 	std::mutex _availabilityLock;
+	uint64_t _beginPresentTime = 0;
 	uint64_t _presentationStartTime = 0;
 };
 
@@ -641,7 +670,7 @@ public:
     VkDebugReportObjectTypeEXT getVkDebugReportObjectType() override { return VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_EXT; }
     
     /** Returns the number of planes of this ycbcr conversion. */
-    inline uint8_t getPlaneCount() { return _planes; }
+    uint8_t getPlaneCount() { return _planes; }
 
     /** Writes this conversion settings to a MSL constant sampler */
     void updateConstExprSampler(SPIRV_CROSS_NAMESPACE::MSLConstexprSampler& constExprSampler) const;
@@ -679,10 +708,10 @@ public:
 	VkDebugReportObjectTypeEXT getVkDebugReportObjectType() override { return VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_EXT; }
 
 	/** Returns the Metal sampler state. */
-	inline id<MTLSamplerState> getMTLSamplerState() { return _mtlSamplerState; }
+	id<MTLSamplerState> getMTLSamplerState() { return _mtlSamplerState; }
     
     /** Returns the number of planes if this is a ycbcr conversion or 0 otherwise. */
-    inline uint8_t getPlaneCount() { return (_ycbcrConversion) ? _ycbcrConversion->getPlaneCount() : 0; }
+    uint8_t getPlaneCount() { return (_ycbcrConversion) ? _ycbcrConversion->getPlaneCount() : 0; }
 
 	/**
 	 * If this sampler requires hardcoding in MSL, populates the hardcoded sampler in the resource binding.

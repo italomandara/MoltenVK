@@ -1,7 +1,7 @@
 /*
  * MVKSwapchain.h
  *
- * Copyright (c) 2015-2024 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -94,6 +94,9 @@ public:
 	/** VK_GOOGLE_display_timing - returns past presentation times */
 	VkResult getPastPresentationTiming(uint32_t *pCount, VkPastPresentationTimingGOOGLE *pPresentationTimings);
 
+	/** Waits for the swapchain present ID to meet or exceed the provided ID. */
+	VkResult waitForPresent(uint64_t presentId, uint64_t timeout);
+
 	/** Marks parts of the underlying CAMetalLayer as needing update. */
 	void setLayerNeedsDisplay(const VkPresentRegionKHR* pRegion);
 
@@ -119,7 +122,7 @@ protected:
     void renderWatermark(id<MTLTexture> mtlTexture, id<MTLCommandBuffer> mtlCmdBuff);
     void markFrameInterval();
 	void beginPresentation(const MVKImagePresentInfo& presentInfo);
-	void endPresentation(const MVKImagePresentInfo& presentInfo, uint64_t actualPresentTime = 0);
+	void endPresentation(const MVKImagePresentInfo& presentInfo, uint64_t beginPresentTime, uint64_t actualPresentTime = 0);
 	void forceUnpresentedImageCompletion();
 
 	MVKSurface* _surface = nullptr;
@@ -130,6 +133,9 @@ protected:
 	VkPastPresentationTimingGOOGLE _presentTimingHistory[kMaxPresentationHistory];
 	std::atomic<uint64_t> _currentAcquisitionID = 0;
 	std::mutex _presentHistoryLock;
+	std::mutex _currentPresentIdMutex;
+	std::condition_variable _currentPresentIdCondVar;
+	uint64_t _currentPresentId = 0;
 	uint64_t _lastFrameTime = 0;
 	VkExtent2D _imageExtent = {0, 0};
 	std::atomic<uint32_t> _unpresentedImageCount = 0;

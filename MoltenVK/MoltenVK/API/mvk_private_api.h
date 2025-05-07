@@ -1,7 +1,7 @@
 /*
  * mvk_private_api.h
  *
- * Copyright (c) 2015-2024 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ typedef unsigned long MTLArgumentBuffersTier;
  */
 
 
-#define MVK_PRIVATE_API_VERSION   41
+#define MVK_PRIVATE_API_VERSION   43
 
 
 #pragma mark -
@@ -63,8 +63,8 @@ typedef unsigned long MTLArgumentBuffersTier;
  *   - 401215    (version 4.12.15)
  */
 #define MVK_VERSION_MAJOR   1
-#define MVK_VERSION_MINOR   2
-#define MVK_VERSION_PATCH   9
+#define MVK_VERSION_MINOR   3
+#define MVK_VERSION_PATCH   1
 
 #define MVK_MAKE_VERSION(major, minor, patch)  (((major) * 10000) + ((minor) * 100) + (patch))
 #define MVK_VERSION                            MVK_MAKE_VERSION(MVK_VERSION_MAJOR, MVK_VERSION_MINOR, MVK_VERSION_PATCH)
@@ -124,9 +124,10 @@ typedef enum MVKConfigTraceVulkanCalls {
 
 /** Identifies the scope for Metal to run an automatic GPU capture for diagnostic debugging purposes. */
 typedef enum MVKConfigAutoGPUCaptureScope {
-	MVK_CONFIG_AUTO_GPU_CAPTURE_SCOPE_NONE     = 0,	/**< No automatic GPU capture. */
-	MVK_CONFIG_AUTO_GPU_CAPTURE_SCOPE_DEVICE   = 1,	/**< Automatically capture all GPU activity during the lifetime of a VkDevice. */
-	MVK_CONFIG_AUTO_GPU_CAPTURE_SCOPE_FRAME    = 2,	/**< Automatically capture all GPU activity during the rendering and presentation of the first frame. */
+	MVK_CONFIG_AUTO_GPU_CAPTURE_SCOPE_NONE      = 0,	/**< No automatic GPU capture. */
+	MVK_CONFIG_AUTO_GPU_CAPTURE_SCOPE_DEVICE    = 1,	/**< Automatically capture all GPU activity during the lifetime of a VkDevice. */
+	MVK_CONFIG_AUTO_GPU_CAPTURE_SCOPE_FRAME     = 2,	/**< Automatically capture all GPU activity during the rendering and presentation of the first frame. */
+	MVK_CONFIG_AUTO_GPU_CAPTURE_SCOPE_ON_DEMAND = 3,	/**< Capture all GPU activity when signaled on a temporary named pipe. */
 	MVK_CONFIG_AUTO_GPU_CAPTURE_SCOPE_MAX_ENUM = 0x7FFFFFFF
 } MVKConfigAutoGPUCaptureScope;
 
@@ -138,14 +139,6 @@ typedef enum MVKConfigAdvertiseExtensionBits {
 	MVK_CONFIG_ADVERTISE_EXTENSIONS_MAX_ENUM    = 0x7FFFFFFF
 } MVKConfigAdvertiseExtensionBits;
 typedef VkFlags MVKConfigAdvertiseExtensions;
-
-/** Identifies the use of Metal Argument Buffers. */
-typedef enum MVKUseMetalArgumentBuffers {
-	MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS_NEVER               = 0,	/**< Don't use Metal Argument Buffers. */
-	MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS_ALWAYS              = 1,	/**< Use Metal Argument Buffers for all pipelines. */
-	MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS_DESCRIPTOR_INDEXING = 2,	/**< Use Metal Argument Buffers only if VK_EXT_descriptor_indexing extension is enabled. */
-	MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS_MAX_ENUM            = 0x7FFFFFFF
-} MVKUseMetalArgumentBuffers;
 
 /** Identifies the Metal functionality used to support Vulkan semaphore functionality (VkSemaphore). */
 typedef enum MVKVkSemaphoreSupportStyle {
@@ -192,6 +185,14 @@ typedef enum MVKConfigActivityPerformanceLoggingStyle {
 	MVK_CONFIG_ACTIVITY_PERFORMANCE_LOGGING_STYLE_MAX_ENUM                   = 0x7FFFFFFF,
 } MVKConfigActivityPerformanceLoggingStyle;
 
+/** Identifies when MTLHeap is used to allocate buffer and image resources. */
+typedef enum MVKConfigUseMTLHeap {
+	MVK_CONFIG_USE_MTLHEAP_NEVER      = 0,  /**< Do not use MTLHeap for allocating resources. */
+	MVK_CONFIG_USE_MTLHEAP_WHERE_SAFE = 1,  /**< Use MTLHeap for allocating resources, where safe to do so. On AMD GPUs, this is the same as MVK_CONFIG_USE_MTLHEAP_NEVER, due to potential challenges with MTLHeap usage on those platforms. On other GPUs this is the same as MVK_CONFIG_USE_MTLHEAP_ALWAYS. */
+	MVK_CONFIG_USE_MTLHEAP_ALWAYS     = 2,  /**< Use MTLHeap for allocating resources. */
+	MVK_CONFIG_USE_MTLHEAP_MAX_ENUM   = 0x7FFFFFFF
+} MVKConfigUseMTLHeap;
+
 /**
  * MoltenVK configuration. You can retrieve a copy of this structure using the vkGetMoltenVKConfigurationMVK() function.
  *
@@ -232,19 +233,20 @@ typedef struct {
 	MVKConfigAutoGPUCaptureScope autoGPUCaptureScope;                          /**< MVK_CONFIG_AUTO_GPU_CAPTURE_SCOPE */
 	const char* autoGPUCaptureOutputFilepath;                                  /**< MVK_CONFIG_AUTO_GPU_CAPTURE_OUTPUT_FILE */
 	VkBool32 texture1DAs2D;                                                    /**< MVK_CONFIG_TEXTURE_1D_AS_2D */
-	VkBool32 preallocateDescriptors;                                           /**< MVK_CONFIG_PREALLOCATE_DESCRIPTORS */
+	VkBool32 preallocateDescriptors;                                           /**< Obsolete, deprecated, and ignored. */
 	VkBool32 useCommandPooling;                                                /**< MVK_CONFIG_USE_COMMAND_POOLING */
-	VkBool32 useMTLHeap;                                                       /**< MVK_CONFIG_USE_MTLHEAP */
+	MVKConfigUseMTLHeap useMTLHeap;                                            /**< MVK_CONFIG_USE_MTLHEAP */
 	MVKConfigActivityPerformanceLoggingStyle activityPerformanceLoggingStyle;  /**< MVK_CONFIG_ACTIVITY_PERFORMANCE_LOGGING_STYLE */
 	uint32_t apiVersionToAdvertise;                                            /**< MVK_CONFIG_API_VERSION_TO_ADVERTISE */
 	MVKConfigAdvertiseExtensions advertiseExtensions;                          /**< MVK_CONFIG_ADVERTISE_EXTENSIONS */
 	VkBool32 resumeLostDevice;                                                 /**< MVK_CONFIG_RESUME_LOST_DEVICE */
-	MVKUseMetalArgumentBuffers useMetalArgumentBuffers;                        /**< MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS */
+	VkBool32 useMetalArgumentBuffers;                                          /**< MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS */
 	MVKConfigCompressionAlgorithm shaderSourceCompressionAlgorithm;            /**< MVK_CONFIG_SHADER_COMPRESSION_ALGORITHM */
 	VkBool32 shouldMaximizeConcurrentCompilation;                              /**< MVK_CONFIG_SHOULD_MAXIMIZE_CONCURRENT_COMPILATION */
 	float timestampPeriodLowPassAlpha;                                         /**< MVK_CONFIG_TIMESTAMP_PERIOD_LOWPASS_ALPHA */
 	VkBool32 useMetalPrivateAPI;                                               /**< MVK_CONFIG_USE_METAL_PRIVATE_API */
-	uint32_t _unused_struct_padding;
+	const char* shaderDumpDir;                                                 /**< MVK_CONFIG_SHADER_DUMP_DIR */
+	VkBool32 shaderLogEstimatedGLSL;                                           /**< MVK_CONFIG_SHADER_LOG_ESTIMATED_GLSL */
 } MVKConfiguration;
 
 // Legacy support for renamed struct elements.
@@ -289,7 +291,7 @@ typedef VkFlags MVKCounterSamplingFlags;
  * SHOULD NOT BE CHANGED.
  */
 typedef struct {
-    uint32_t mslVersion;                        	/**< The version of the Metal Shading Language available on this device. The format of the integer is MMmmpp, with two decimal digts each for Major, minor, and patch version values (eg. MSL 1.2 would appear as 010200). */
+    uint32_t mslVersion;                        	/**< The version of the Metal Shading Language available on this device. The format of the integer is MMmmpp, with two decimal digts each for Major, minor, and patch version values (eg. MSL 1.3 would appear as 010300). */
 	VkBool32 indirectDrawing;                   	/**< If true, draw calls support parameters held in a GPU buffer. */
 	VkBool32 baseVertexInstanceDrawing;         	/**< If true, draw calls support specifiying the base vertex and instance. */
     uint32_t dynamicMTLBufferSize;              	/**< If greater than zero, dynamic MTLBuffers for setting vertex, fragment, and compute bytes are supported, and their content must be below this value. */
@@ -351,8 +353,8 @@ typedef struct {
     uint32_t minSubgroupSize;			        	/**< The minimum number of threads in a SIMD-group. */
     VkBool32 textureBarriers;                   	/**< If true, texture barriers are supported within Metal render passes. Deprecated. Will always be false on all platforms. */
     VkBool32 tileBasedDeferredRendering;        	/**< If true, this device uses tile-based deferred rendering. */
-	VkBool32 argumentBuffers;						/**< If true, Metal argument buffers are supported. */
-	VkBool32 descriptorSetArgumentBuffers;			/**< If true, a Metal argument buffer can be assigned to a descriptor set, and used on any pipeline and pipeline stage. If false, a different Metal argument buffer must be used for each pipeline-stage/descriptor-set combination. */
+	VkBool32 argumentBuffers;						/**< If true, Metal argument buffers are supported on the platform. */
+	VkBool32 descriptorSetArgumentBuffers;			/**< If true, Metal argument buffers can be used for descriptor sets. */
 	MVKFloatRounding clearColorFloatRounding;		/**< Identifies the type of rounding Metal uses for MTLClearColor float to integer conversions. */
 	MVKCounterSamplingFlags counterSamplingPoints;	/**< Identifies the points where pipeline GPU counter sampling may occur. */
 	VkBool32 programmableSamplePositions;			/**< If true, programmable MSAA sample positions are supported. */
@@ -363,6 +365,8 @@ typedef struct {
 	VkBool32 dynamicVertexStride;					/**< If true, VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE is supported. */
 	VkBool32 needsCubeGradWorkaround;				/**< If true, sampling from cube textures with explicit gradients is broken and needs a workaround. */
 	VkBool32 nativeTextureAtomics;                  /**< If true, atomic operations on textures are supported natively. */
+	VkBool32 needsArgumentBufferEncoders;			/**< If true, Metal argument buffer encoders are needed to populate argument buffer content. */
+    VkBool32 residencySets;                         /**< If true, the device supports creating residency sets. */
 } MVKPhysicalDeviceMetalFeatures;
 
 

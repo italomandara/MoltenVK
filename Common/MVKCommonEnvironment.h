@@ -1,7 +1,7 @@
 /*
  * MVKCommonEnvironment.h
  *
- * Copyright (c) 2015-2024 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -106,26 +106,36 @@ extern "C" {
 #	define MVK_MACOS_APPLE_SILICON	(MVK_MACOS && MVK_APPLE_SILICON)
 #endif
 
-/** Building with Xcode versions. iOS version also covers tvOS. */
+/** Building with Xcode versions. */
+#ifndef MVK_XCODE_16
+#   define MVK_XCODE_16             ((__MAC_OS_X_VERSION_MAX_ALLOWED >= 150000) || \
+                                    (__IPHONE_OS_VERSION_MAX_ALLOWED >= 180000) || \
+                                        (__TV_OS_VERSION_MAX_ALLOWED >= 180000))
+#endif
 #ifndef MVK_XCODE_15
 #   define MVK_XCODE_15             ((__MAC_OS_X_VERSION_MAX_ALLOWED >= 140000) || \
-                                    (__IPHONE_OS_VERSION_MAX_ALLOWED >= 170000))
+                                    (__IPHONE_OS_VERSION_MAX_ALLOWED >= 170000) || \
+                                        (__TV_OS_VERSION_MAX_ALLOWED >= 170000))
 #endif
 #ifndef MVK_XCODE_14_3
 #	define MVK_XCODE_14_3			((__MAC_OS_X_VERSION_MAX_ALLOWED >= 130300) || \
-									(__IPHONE_OS_VERSION_MAX_ALLOWED >= 160400))
+									(__IPHONE_OS_VERSION_MAX_ALLOWED >= 160400) || \
+                                        (__TV_OS_VERSION_MAX_ALLOWED >= 160400))
 #endif
 #ifndef MVK_XCODE_14
 #	define MVK_XCODE_14				((__MAC_OS_X_VERSION_MAX_ALLOWED >= 130000) || \
-									(__IPHONE_OS_VERSION_MAX_ALLOWED >= 160000))
+									(__IPHONE_OS_VERSION_MAX_ALLOWED >= 160000) || \
+                                        (__TV_OS_VERSION_MAX_ALLOWED >= 160000))
 #endif
 #ifndef MVK_XCODE_13
 #	define MVK_XCODE_13 			((__MAC_OS_X_VERSION_MAX_ALLOWED >= 120000) || \
-									 (__IPHONE_OS_VERSION_MAX_ALLOWED >= 150000))
+									(__IPHONE_OS_VERSION_MAX_ALLOWED >= 150000 || \
+                                        (__TV_OS_VERSION_MAX_ALLOWED >= 150000)))
 #endif
 #ifndef MVK_XCODE_12
 #	define MVK_XCODE_12 			((__MAC_OS_X_VERSION_MAX_ALLOWED >= 110000) || \
-									 (__IPHONE_OS_VERSION_MAX_ALLOWED >= 140000))
+									(__IPHONE_OS_VERSION_MAX_ALLOWED >= 140000 || \
+                                        (__TV_OS_VERSION_MAX_ALLOWED >= 140000)))
 #endif
 
 /**

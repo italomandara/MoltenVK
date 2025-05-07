@@ -1,7 +1,7 @@
 /*
  * MVKInstance.mm
  *
- * Copyright (c) 2015-2024 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -227,7 +227,7 @@ void MVKInstance::debugReportMessage(MVKVulkanAPIObject* mvkAPIObj, MVKConfigLog
 			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT,
 			.pNext = nullptr,
 			.flags = 0,
-			.pMessageIdName = nullptr,
+			.pMessageIdName = mvkGetReportingLevelString(logLevel),
 			.messageIdNumber = 0,
 			.pMessage = pMessage,
 			.queueLabelCount = 0,
@@ -281,21 +281,34 @@ MVKInstance::MVKInstance(const VkInstanceCreateInfo* pCreateInfo) : _enabledExte
 	initDebugCallbacks(pCreateInfo);	// Do before any creation activities
 
 	mvkSetOrClear(&_appInfo, pCreateInfo->pApplicationInfo);
-    
     if (_appInfo.apiVersion == 0) {
         _appInfo.apiVersion = VK_API_VERSION_1_0;   // Default
     }
     else if (MVK_VULKAN_API_VERSION_CONFORM(_appInfo.apiVersion) > MVK_VULKAN_API_VERSION_CONFORM(MVK_VULKAN_API_VERSION)) {
         _appInfo.apiVersion = MVK_VULKAN_API_VERSION;
     }
-    
-	initProcAddrs();		// Init function pointers
 
-	logVersions();	// Log the MoltenVK and Vulkan versions
+	// Enable extensions before setting config.
+	setConfigurationResult(verifyLayers(pCreateInfo->enabledLayerCount, pCreateInfo->ppEnabledLayerNames));
+	MVKExtensionList* pWritableExtns = (MVKExtensionList*)&_enabledExtensions;
+	setConfigurationResult(pWritableExtns->enable(pCreateInfo->enabledExtensionCount,
+												  pCreateInfo->ppEnabledExtensionNames,
+												  getDriverLayer()->getSupportedInstanceExtensions()));
+
+	initMVKConfig(pCreateInfo);		// After extensions enabled.
+
+	// If a maximum API version has been configured, honor it.
+	auto cfgAPIVer = getMVKConfig().apiVersionToAdvertise;
+	if (MVK_VULKAN_API_VERSION_CONFORM(_appInfo.apiVersion) > MVK_VULKAN_API_VERSION_CONFORM(cfgAPIVer)) {
+		_appInfo.apiVersion = cfgAPIVer;
+	}
+
+	initProcAddrs();				// Init function pointers
+	logVersions();					// Log the MoltenVK and Vulkan versions. After config.
 
 	// Populate the array of physical GPU devices.
-	// This effort creates a number of autoreleased instances of Metal
-	// and other Obj-C classes, so wrap it all in an autorelease pool.
+	// This must be performed after extensions and config are established.
+	// This effort creates a number of autoreleased Metal objects, so wrap it all in an autorelease pool.
 	@autoreleasepool {
 		NSArray<id<MTLDevice>>* mtlDevices = mvkGetAvailableMTLDevicesArray(this);
 		_physicalDevices.reserve(mtlDevices.count);
@@ -312,18 +325,15 @@ MVKInstance::MVKInstance(const VkInstanceCreateInfo* pCreateInfo) : _enabledExte
 		setConfigurationResult(reportError(VK_ERROR_INCOMPATIBLE_DRIVER, "To support Mac Catalyst, MoltenVK requires macOS 11.0 or above."));
 	}
 
-	// Enable extensions after logging the system and GPU info, for any logging done during extension enablement.
-	setConfigurationResult(verifyLayers(pCreateInfo->enabledLayerCount, pCreateInfo->ppEnabledLayerNames));
-	MVKExtensionList* pWritableExtns = (MVKExtensionList*)&_enabledExtensions;
-	setConfigurationResult(pWritableExtns->enable(pCreateInfo->enabledExtensionCount,
-												  pCreateInfo->ppEnabledExtensionNames,
-												  getDriverLayer()->getSupportedInstanceExtensions()));
-	initMVKConfig(pCreateInfo);
+	// Warn if the Vulkan version requires buffer device address, but it is not available.
+	if ( !mvkSupportsBufferDeviceAddress() && (MVK_VULKAN_API_VERSION_CONFORM(_appInfo.apiVersion) >= MVK_VULKAN_API_VERSION_CONFORM(VK_API_VERSION_1_3)) ) {
+		reportWarning(VK_ERROR_FEATURE_NOT_PRESENT, "VkPhysicalDeviceVulkan12Features::bufferDeviceAddress is a mandatory feature as of Vulkan 1.3, but is not supported on this platform.");
+	}
 
 	MVKLogInfo("Created VkInstance for Vulkan version %s, as requested by app, with the following %d Vulkan extensions enabled:%s",
 			   mvkGetVulkanVersionString(_appInfo.apiVersion).c_str(),
 			   _enabledExtensions.getEnabledCount(),
-			   _enabledExtensions.enabledNamesString("\n\t\t", true).c_str());
+			   _enabledExtensions.enabledNamesString("\n\t", true).c_str());
 
 	_useCreationCallbacks = false;
 }
@@ -384,55 +394,62 @@ void MVKInstance::initMVKConfig(const VkInstanceCreateInfo* pCreateInfo) {
 	mvkSetConfig(_mvkConfig, _mvkConfig, _mvkConfigStringHolders);
 }
 
-#define ADD_ENTRY_POINT_MAP(name, func, api, ext1, ext2, isDev)	\
-	_entryPoints[""#name] = { (PFN_vkVoidFunction)&func, api, ext1,  ext2,  isDev }
+#define ADD_ENTRY_POINT_MAP(name, func, api, ext, isDev)  \
+	_entryPoints[""#name] = { (PFN_vkVoidFunction)&func, ext, api,  isDev }
 
-#define ADD_ENTRY_POINT(func, api, ext1, ext2, isDev)	ADD_ENTRY_POINT_MAP(func, func, api, ext1, ext2, isDev)
+#define ADD_ENTRY_POINT(func, api, ext, isDev)	ADD_ENTRY_POINT_MAP(func, func, api, ext, isDev)
 
-#define ADD_INST_ENTRY_POINT(func)						ADD_ENTRY_POINT(func, VK_API_VERSION_1_0, nullptr, nullptr, false)
-#define ADD_DVC_ENTRY_POINT(func)						ADD_ENTRY_POINT(func, VK_API_VERSION_1_0, nullptr, nullptr, true)
+#define ADD_INST_ENTRY_POINT(func)				ADD_ENTRY_POINT(func, VK_API_VERSION_1_0, nullptr, false)
+#define ADD_DVC_ENTRY_POINT(func)				ADD_ENTRY_POINT(func, VK_API_VERSION_1_0, nullptr, true)
 
 // Add a core function.
-#define ADD_INST_1_1_ENTRY_POINT(func)					ADD_ENTRY_POINT(func, VK_API_VERSION_1_1, nullptr, nullptr, false)
-#define ADD_INST_1_3_ENTRY_POINT(func)					ADD_ENTRY_POINT(func, VK_API_VERSION_1_3, nullptr, nullptr, false)
-#define ADD_DVC_1_1_ENTRY_POINT(func)					ADD_ENTRY_POINT(func, VK_API_VERSION_1_1, nullptr, nullptr, true)
-#define ADD_DVC_1_2_ENTRY_POINT(func)					ADD_ENTRY_POINT(func, VK_API_VERSION_1_2, nullptr, nullptr, true)
-#define ADD_DVC_1_3_ENTRY_POINT(func)					ADD_ENTRY_POINT(func, VK_API_VERSION_1_3, nullptr, nullptr, true)
+#define ADD_INST_1_1_ENTRY_POINT(func)			ADD_ENTRY_POINT(func, VK_API_VERSION_1_1, nullptr, false)
+#define ADD_INST_1_3_ENTRY_POINT(func)			ADD_ENTRY_POINT(func, VK_API_VERSION_1_3, nullptr, false)
+#define ADD_DVC_1_1_ENTRY_POINT(func)			ADD_ENTRY_POINT(func, VK_API_VERSION_1_1, nullptr, true)
+#define ADD_DVC_1_2_ENTRY_POINT(func)			ADD_ENTRY_POINT(func, VK_API_VERSION_1_2, nullptr, true)
+#define ADD_DVC_1_3_ENTRY_POINT(func)			ADD_ENTRY_POINT(func, VK_API_VERSION_1_3, nullptr, true)
+#define ADD_DVC_1_4_ENTRY_POINT(func)			ADD_ENTRY_POINT(func, VK_API_VERSION_1_4, nullptr, true)
 
-// Add both the promoted core function and the extension function.
+// Add both the promoted core function under the promoted name, and the extension function under its original name.
 #define ADD_INST_1_1_PROMOTED_ENTRY_POINT(func, EXT)	\
 	ADD_INST_1_1_ENTRY_POINT(func);	\
-	ADD_ENTRY_POINT_MAP(func##KHR, func, 0, VK_##EXT##_EXTENSION_NAME, nullptr, false)
+	ADD_ENTRY_POINT_MAP(func##KHR, func, 0, VK_##EXT##_EXTENSION_NAME, false)
 
 #define ADD_DVC_1_1_PROMOTED_ENTRY_POINT(func, EXT)	\
 	ADD_DVC_1_1_ENTRY_POINT(func);	\
-	ADD_ENTRY_POINT_MAP(func##KHR, func, 0, VK_##EXT##_EXTENSION_NAME, nullptr, true)
+	ADD_ENTRY_POINT_MAP(func##KHR, func, 0, VK_##EXT##_EXTENSION_NAME, true)
 
-#define ADD_DVC_1_2_PROMOTED_ENTRY_POINT(func, suffix, EXT) \
+#define ADD_DVC_1_2_PROMOTED_ENTRY_POINT(func, extSuffix, EXT) \
 	ADD_DVC_1_2_ENTRY_POINT(func); \
-	ADD_ENTRY_POINT_MAP(func##suffix, func, 0, VK_##EXT##_EXTENSION_NAME, nullptr, true)
+	ADD_ENTRY_POINT_MAP(func##extSuffix, func, 0, VK_##EXT##_EXTENSION_NAME, true)
 
 #define ADD_INST_1_3_PROMOTED_ENTRY_POINT(func, EXT)	\
 	ADD_INST_1_3_ENTRY_POINT(func);	\
-	ADD_ENTRY_POINT_MAP(func##KHR, func, 0, VK_##EXT##_EXTENSION_NAME, nullptr, false)
+	ADD_ENTRY_POINT_MAP(func##KHR, func, 0, VK_##EXT##_EXTENSION_NAME, false)
 
-#define ADD_DVC_1_3_PROMOTED_ENTRY_POINT(func, suffix, EXT) \
+#define ADD_DVC_1_3_PROMOTED_ENTRY_POINT(func, extSuffix, EXT) \
 	ADD_DVC_1_3_ENTRY_POINT(func); \
-	ADD_ENTRY_POINT_MAP(func##suffix, func, 0, VK_##EXT##_EXTENSION_NAME, nullptr, true)
+	ADD_ENTRY_POINT_MAP(func##extSuffix, func, 0, VK_##EXT##_EXTENSION_NAME, true)
+
+#define ADD_DVC_1_4_PROMOTED_ENTRY_POINT(func, extSuffix, EXT) \
+	ADD_DVC_1_4_ENTRY_POINT(func); \
+	ADD_ENTRY_POINT_MAP(func##extSuffix, func, 0, VK_##EXT##_EXTENSION_NAME, true)
 
 // Add an extension function.
-#define ADD_INST_EXT_ENTRY_POINT(func, EXT)					ADD_ENTRY_POINT(func, 0, VK_##EXT##_EXTENSION_NAME, nullptr, false)
-#define ADD_DVC_EXT_ENTRY_POINT(func, EXT)					ADD_ENTRY_POINT(func, 0, VK_##EXT##_EXTENSION_NAME, nullptr, true)
+#define ADD_INST_EXT_ENTRY_POINT(func, EXT)					ADD_ENTRY_POINT(func, 0, VK_##EXT##_EXTENSION_NAME, false)
+#define ADD_DVC_EXT_ENTRY_POINT(func, EXT)					ADD_ENTRY_POINT(func, 0, VK_##EXT##_EXTENSION_NAME, true)
 
-#define ADD_INST_EXT2_ENTRY_POINT(func, API, EXT1, EXT2)	ADD_ENTRY_POINT(func, VK_API_VERSION_##API, VK_##EXT1##_EXTENSION_NAME, VK_##EXT2##_EXTENSION_NAME, false)
-#define ADD_DVC_EXT2_ENTRY_POINT(func, API, EXT1, EXT2)		ADD_ENTRY_POINT(func, VK_API_VERSION_##API, VK_##EXT1##_EXTENSION_NAME, VK_##EXT2##_EXTENSION_NAME, true)
+// Add an extension function that aliases to another function from core or another extension.
+#define ADD_INST_EXT_ENTRY_POINT_ALIAS(alias, func, EXT)	ADD_ENTRY_POINT_MAP(alias, func, 0, VK_##EXT##_EXTENSION_NAME, false)
+#define ADD_DVC_EXT_ENTRY_POINT_ALIAS(alias, func, EXT)		ADD_ENTRY_POINT_MAP(alias, func, 0, VK_##EXT##_EXTENSION_NAME, true)
 
-#define ADD_INST_EXT_ENTRY_POINT_ALIAS(alias, func, EXT)	ADD_ENTRY_POINT_MAP(alias, func, 0, VK_##EXT##_EXTENSION_NAME, nullptr, false)
-#define ADD_DVC_EXT_ENTRY_POINT_ALIAS(alias, func, EXT)		ADD_ENTRY_POINT_MAP(alias, func, 0, VK_##EXT##_EXTENSION_NAME, nullptr, true)
+// Add a function that exists in both core and an extension. The function may have been promoted, without changing the function name.
+#define ADD_INST_VER_OR_EXT_ENTRY_POINT(func, API, EXT1)	ADD_ENTRY_POINT(func, VK_API_VERSION_##API, VK_##EXT1##_EXTENSION_NAME, false)
+#define ADD_DVC_VER_OR_EXT_ENTRY_POINT(func, API, EXT1)		ADD_ENTRY_POINT(func, VK_API_VERSION_##API, VK_##EXT1##_EXTENSION_NAME, true)
 
 // Add an open function, not tied to core or an extension.
-#define ADD_INST_OPEN_ENTRY_POINT(func)						ADD_ENTRY_POINT(func, 0, nullptr, nullptr, false)
-#define ADD_DVC_OPEN_ENTRY_POINT(func)						ADD_ENTRY_POINT(func, 0, nullptr, nullptr, true)
+#define ADD_INST_OPEN_ENTRY_POINT(func)						ADD_ENTRY_POINT(func, 0, nullptr, false)
+#define ADD_DVC_OPEN_ENTRY_POINT(func)						ADD_ENTRY_POINT(func, 0, nullptr, true)
 
 // Initializes the function pointer map.
 void MVKInstance::initProcAddrs() {
@@ -462,8 +479,6 @@ void MVKInstance::initProcAddrs() {
 	ADD_INST_1_1_PROMOTED_ENTRY_POINT(vkGetPhysicalDeviceExternalFenceProperties, KHR_EXTERNAL_FENCE_CAPABILITIES);
 	ADD_INST_1_1_PROMOTED_ENTRY_POINT(vkGetPhysicalDeviceExternalBufferProperties, KHR_EXTERNAL_MEMORY_CAPABILITIES);
 	ADD_INST_1_1_PROMOTED_ENTRY_POINT(vkGetPhysicalDeviceExternalSemaphoreProperties, KHR_EXTERNAL_SEMAPHORE_CAPABILITIES);
-
-	ADD_INST_1_3_PROMOTED_ENTRY_POINT(vkGetPhysicalDeviceToolProperties, EXT_TOOLING_INFO);
 
 	// Instance extension functions.
 	ADD_INST_EXT_ENTRY_POINT(vkDestroySurfaceKHR, KHR_SURFACE);
@@ -499,7 +514,6 @@ void MVKInstance::initProcAddrs() {
 #endif
 
 	// MoltenVK-specific instannce functions, not tied to a Vulkan API version or an extension.
-	ADD_INST_OPEN_ENTRY_POINT(vkGetMoltenVKConfigurationMVK);
 	ADD_INST_OPEN_ENTRY_POINT(vkGetPhysicalDeviceMetalFeaturesMVK);
 	ADD_INST_OPEN_ENTRY_POINT(vkGetPerformanceStatisticsMVK);
 
@@ -656,6 +670,10 @@ void MVKInstance::initProcAddrs() {
 	ADD_DVC_1_1_PROMOTED_ENTRY_POINT(vkTrimCommandPool, KHR_MAINTENANCE1);
 	ADD_DVC_1_1_PROMOTED_ENTRY_POINT(vkCmdSetDeviceMask, KHR_DEVICE_GROUP);
 	ADD_DVC_1_1_PROMOTED_ENTRY_POINT(vkCmdDispatchBase, KHR_DEVICE_GROUP);
+	ADD_DVC_VER_OR_EXT_ENTRY_POINT(vkGetDeviceGroupPresentCapabilitiesKHR, 1_1, KHR_DEVICE_GROUP);	// Promoted to Vulkan 1.1 under same name
+	ADD_DVC_VER_OR_EXT_ENTRY_POINT(vkGetDeviceGroupSurfacePresentModesKHR, 1_1, KHR_DEVICE_GROUP);	// Promoted to Vulkan 1.1 under same name
+	ADD_DVC_VER_OR_EXT_ENTRY_POINT(vkGetPhysicalDevicePresentRectanglesKHR, 1_1, KHR_DEVICE_GROUP);	// Promoted to Vulkan 1.1 under same name
+	ADD_DVC_VER_OR_EXT_ENTRY_POINT(vkAcquireNextImage2KHR, 1_1, KHR_DEVICE_GROUP);					// Promoted to Vulkan 1.1 under same name
 
 	ADD_DVC_1_2_PROMOTED_ENTRY_POINT(vkCmdBeginRenderPass2, KHR, KHR_CREATE_RENDERPASS_2);
 	ADD_DVC_1_2_PROMOTED_ENTRY_POINT(vkCmdDrawIndexedIndirectCount, KHR, KHR_DRAW_INDIRECT_COUNT);
@@ -708,6 +726,25 @@ void MVKInstance::initProcAddrs() {
 	ADD_DVC_1_3_PROMOTED_ENTRY_POINT(vkGetPrivateData, EXT, EXT_PRIVATE_DATA);
 	ADD_DVC_1_3_PROMOTED_ENTRY_POINT(vkQueueSubmit2, KHR, KHR_SYNCHRONIZATION_2);
 	ADD_DVC_1_3_PROMOTED_ENTRY_POINT(vkSetPrivateData, EXT, EXT_PRIVATE_DATA);
+	ADD_DVC_1_3_PROMOTED_ENTRY_POINT(vkGetPhysicalDeviceToolProperties, EXT, EXT_TOOLING_INFO);
+
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkCmdBindIndexBuffer2, KHR, KHR_MAINTENANCE_5);
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkGetRenderingAreaGranularity, KHR, KHR_MAINTENANCE_5);
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkGetImageSubresourceLayout2, KHR, KHR_MAINTENANCE_5);
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkGetDeviceImageSubresourceLayout, KHR, KHR_MAINTENANCE_5);
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkCmdBindDescriptorSets2, KHR, KHR_MAINTENANCE_6);
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkCmdPushConstants2, KHR, KHR_MAINTENANCE_6);
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkCmdPushDescriptorSet2, KHR, KHR_MAINTENANCE_6);
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkCmdPushDescriptorSetWithTemplate2, KHR, KHR_MAINTENANCE_6);
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkMapMemory2, KHR, KHR_MAP_MEMORY_2);
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkUnmapMemory2, KHR, KHR_MAP_MEMORY_2);
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkCmdPushDescriptorSet, KHR, KHR_PUSH_DESCRIPTOR);
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkCmdPushDescriptorSetWithTemplate, KHR, KHR_PUSH_DESCRIPTOR);
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkCopyImageToImage, EXT, EXT_HOST_IMAGE_COPY);
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkCopyImageToMemory, EXT, EXT_HOST_IMAGE_COPY);
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkCopyMemoryToImage, EXT, EXT_HOST_IMAGE_COPY);
+	ADD_DVC_EXT_ENTRY_POINT_ALIAS(vkGetImageSubresourceLayout2EXT, vkGetImageSubresourceLayout2, EXT_HOST_IMAGE_COPY);
+	ADD_DVC_1_4_PROMOTED_ENTRY_POINT(vkTransitionImageLayout, EXT, EXT_HOST_IMAGE_COPY);
 
 	// Device extension functions.
 	ADD_DVC_EXT_ENTRY_POINT(vkGetCalibratedTimestampsKHR, KHR_CALIBRATED_TIMESTAMPS);
@@ -717,19 +754,12 @@ void MVKInstance::initProcAddrs() {
     ADD_DVC_EXT_ENTRY_POINT(vkDestroyDeferredOperationKHR, KHR_DEFERRED_HOST_OPERATIONS);
     ADD_DVC_EXT_ENTRY_POINT(vkGetDeferredOperationMaxConcurrencyKHR, KHR_DEFERRED_HOST_OPERATIONS);
     ADD_DVC_EXT_ENTRY_POINT(vkGetDeferredOperationResultKHR, KHR_DEFERRED_HOST_OPERATIONS);
-	ADD_DVC_EXT_ENTRY_POINT(vkMapMemory2KHR, KHR_MAP_MEMORY_2);
-	ADD_DVC_EXT_ENTRY_POINT(vkUnmapMemory2KHR, KHR_MAP_MEMORY_2);
-	ADD_DVC_EXT_ENTRY_POINT(vkCmdPushDescriptorSetKHR, KHR_PUSH_DESCRIPTOR);
-	ADD_DVC_EXT2_ENTRY_POINT(vkCmdPushDescriptorSetWithTemplateKHR, 1_1, KHR_PUSH_DESCRIPTOR, KHR_DESCRIPTOR_UPDATE_TEMPLATE);
 	ADD_DVC_EXT_ENTRY_POINT(vkCreateSwapchainKHR, KHR_SWAPCHAIN);
 	ADD_DVC_EXT_ENTRY_POINT(vkDestroySwapchainKHR, KHR_SWAPCHAIN);
 	ADD_DVC_EXT_ENTRY_POINT(vkGetSwapchainImagesKHR, KHR_SWAPCHAIN);
 	ADD_DVC_EXT_ENTRY_POINT(vkAcquireNextImageKHR, KHR_SWAPCHAIN);
 	ADD_DVC_EXT_ENTRY_POINT(vkQueuePresentKHR, KHR_SWAPCHAIN);
-	ADD_DVC_EXT2_ENTRY_POINT(vkGetDeviceGroupPresentCapabilitiesKHR, 1_1, KHR_SWAPCHAIN, KHR_DEVICE_GROUP);
-	ADD_DVC_EXT2_ENTRY_POINT(vkGetDeviceGroupSurfacePresentModesKHR, 1_1, KHR_SWAPCHAIN, KHR_DEVICE_GROUP);
-	ADD_DVC_EXT2_ENTRY_POINT(vkGetPhysicalDevicePresentRectanglesKHR, 1_1, KHR_SWAPCHAIN, KHR_DEVICE_GROUP);
-	ADD_DVC_EXT2_ENTRY_POINT(vkAcquireNextImage2KHR, 1_1, KHR_SWAPCHAIN, KHR_DEVICE_GROUP);
+	ADD_DVC_EXT_ENTRY_POINT(vkWaitForPresentKHR, KHR_PRESENT_WAIT);
 	ADD_DVC_EXT_ENTRY_POINT_ALIAS(vkGetCalibratedTimestampsEXT, vkGetCalibratedTimestampsKHR, EXT_CALIBRATED_TIMESTAMPS);
 	ADD_DVC_EXT_ENTRY_POINT_ALIAS(vkGetPhysicalDeviceCalibrateableTimeDomainsEXT, vkGetPhysicalDeviceCalibrateableTimeDomainsKHR, EXT_CALIBRATED_TIMESTAMPS);
 	ADD_DVC_EXT_ENTRY_POINT(vkDebugMarkerSetObjectTagEXT, EXT_DEBUG_MARKER);
@@ -768,6 +798,8 @@ void MVKInstance::initProcAddrs() {
 	ADD_DVC_EXT_ENTRY_POINT(vkCmdSetSampleLocationsEnableEXT, EXT_EXTENDED_DYNAMIC_STATE_3);
 	ADD_DVC_EXT_ENTRY_POINT(vkCmdSetSampleMaskEXT, EXT_EXTENDED_DYNAMIC_STATE_3);
 	ADD_DVC_EXT_ENTRY_POINT(vkCmdSetTessellationDomainOriginEXT, EXT_EXTENDED_DYNAMIC_STATE_3);
+	ADD_DVC_EXT_ENTRY_POINT(vkGetMemoryMetalHandleEXT, EXT_EXTERNAL_MEMORY_METAL);
+	ADD_DVC_EXT_ENTRY_POINT(vkGetMemoryMetalHandlePropertiesEXT, EXT_EXTERNAL_MEMORY_METAL);
 }
 
 void MVKInstance::logVersions() {
@@ -778,7 +810,7 @@ void MVKInstance::logVersions() {
 			   MVK_VERSION_STRING,
 			   mvkGetVulkanVersionString(getMVKConfig().apiVersionToAdvertise).c_str(),
 			   allExtns.getEnabledCount(),
-			   allExtns.enabledNamesString("\n\t\t", true).c_str());
+			   allExtns.enabledNamesString("\n\t", true).c_str());
 }
 
 VkResult MVKInstance::verifyLayers(uint32_t count, const char* const* names) {
@@ -802,5 +834,6 @@ MVKInstance::~MVKInstance() {
 
 	lock_guard<mutex> lock(_dcbLock);
 	mvkDestroyContainerContents(_debugReportCallbacks);
+	mvkDestroyContainerContents(_debugUtilMessengers);
 }
 

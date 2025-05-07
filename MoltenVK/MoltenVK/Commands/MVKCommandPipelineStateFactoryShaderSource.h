@@ -1,7 +1,7 @@
 /*
  * MVKCommandPipelineStateFactoryShaderSource.h
  *
- * Copyright (c) 2015-2024 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -163,6 +163,7 @@ kernel void cmdResolveColorImage2DFloat(texture2d<float, access::write> dst [[ t
     dst.write(src.read(pos, 0), pos);                                                                           \n\
 }                                                                                                               \n\
                                                                                                                 \n\
+#if __HAVE_TEXTURE_2D_MS_ARRAY__                                                                                \n\
 kernel void cmdResolveColorImage2DFloatArray(texture2d_array<float, access::write> dst [[ texture(0) ]],        \n\
                                              texture2d_ms_array<float, access::read> src [[ texture(1) ]],      \n\
                                              uint2 pos [[thread_position_in_grid]]) {                           \n\
@@ -170,6 +171,7 @@ kernel void cmdResolveColorImage2DFloatArray(texture2d_array<float, access::writ
         dst.write(src.read(pos, i, 0), pos, i);                                                                 \n\
     }                                                                                                           \n\
 }                                                                                                               \n\
+#endif                                                                                                          \n\
                                                                                                                 \n\
 kernel void cmdResolveColorImage2DUInt(texture2d<uint, access::write> dst [[ texture(0) ]],                     \n\
                                        texture2d_ms<uint, access::read> src [[ texture(1) ]],                   \n\
@@ -177,6 +179,7 @@ kernel void cmdResolveColorImage2DUInt(texture2d<uint, access::write> dst [[ tex
     dst.write(src.read(pos, 0), pos);                                                                           \n\
 }                                                                                                               \n\
                                                                                                                 \n\
+#if __HAVE_TEXTURE_2D_MS_ARRAY__                                                                                \n\
 kernel void cmdResolveColorImage2DUIntArray(texture2d_array<uint, access::write> dst [[ texture(0) ]],          \n\
                                             texture2d_ms_array<uint, access::read> src [[ texture(1) ]],        \n\
                                             uint2 pos [[thread_position_in_grid]]) {                            \n\
@@ -184,6 +187,7 @@ kernel void cmdResolveColorImage2DUIntArray(texture2d_array<uint, access::write>
         dst.write(src.read(pos, i, 0), pos, i);                                                                 \n\
     }                                                                                                           \n\
 }                                                                                                               \n\
+#endif                                                                                                          \n\
                                                                                                                 \n\
 kernel void cmdResolveColorImage2DInt(texture2d<int, access::write> dst [[ texture(0) ]],                       \n\
                                       texture2d_ms<int, access::read> src [[ texture(1) ]],                     \n\
@@ -191,6 +195,7 @@ kernel void cmdResolveColorImage2DInt(texture2d<int, access::write> dst [[ textu
     dst.write(src.read(pos, 0), pos);                                                                           \n\
 }                                                                                                               \n\
                                                                                                                 \n\
+#if __HAVE_TEXTURE_2D_MS_ARRAY__                                                                                \n\
 kernel void cmdResolveColorImage2DIntArray(texture2d_array<int, access::write> dst [[ texture(0) ]],            \n\
                                            texture2d_ms_array<int, access::read> src [[ texture(1) ]],          \n\
                                            uint2 pos [[thread_position_in_grid]]) {                             \n\
@@ -198,6 +203,7 @@ kernel void cmdResolveColorImage2DIntArray(texture2d_array<int, access::write> d
         dst.write(src.read(pos, i, 0), pos, i);                                                                 \n\
     }                                                                                                           \n\
 }                                                                                                               \n\
+#endif                                                                                                          \n\
                                                                                                                 \n\
 typedef struct {                                                                                                \n\
     uint32_t srcRowStride;                                                                                      \n\
@@ -539,6 +545,13 @@ kernel void accumulateOcclusionQueryResults(device VisibilityBuffer& dest [[buff
     dest.count += src.count;                                                                                    \n\
     dest.countHigh += src.countHigh;                                                                            \n\
     if (dest.count < max(oldDestCount, src.count)) { dest.countHigh++; }                                        \n\
+}                                                                                                               \n\
+                                                                                                                \n\
+kernel void convertUint8Indices(device uint8_t* src [[ buffer(0) ]],                                            \n\
+                                device uint16_t* dst [[ buffer(1) ]],                                           \n\
+                                uint pos [[thread_position_in_grid]]) {                                         \n\
+    uint8_t idx = src[pos];                                                                                     \n\
+    dst[pos] = idx == 0xFF ? 0xFFFF : idx;                                                                      \n\
 }                                                                                                               \n\
                                                                                                                 \n\
 ";

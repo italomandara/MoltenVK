@@ -1,7 +1,7 @@
 /*
  * MVKSwapchain.mm
  *
- * Copyright (c) 2015-2024 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,9 +42,7 @@ void MVKSwapchain::propagateDebugName() {
 	if (_debugName) {
 		size_t imgCnt = _presentableImages.size();
 		for (size_t imgIdx = 0; imgIdx < imgCnt; imgIdx++) {
-			NSString* nsName = [[NSString alloc] initWithFormat: @"%@(%lu)", _debugName, imgIdx];	// temp retain
-			_presentableImages[imgIdx]->setDebugName(nsName.UTF8String);
-			[nsName release];																		// release temp string
+			_presentableImages[imgIdx]->setDebugName([NSString stringWithFormat: @"%@(%lu)", _debugName, imgIdx].UTF8String);
 		}
 	}
 }
@@ -171,7 +169,7 @@ void MVKSwapchain::markFrameInterval() {
 
 	if (prevFrameTime == 0) { return; }		// First frame starts at first presentation
 
-	_device->updateActivityPerformance(_device->_performanceStatistics.queue.frameInterval, mvkGetElapsedMilliseconds(prevFrameTime, _lastFrameTime));
+	addPerformanceInterval(getPerformanceStats().queue.frameInterval, prevFrameTime, _lastFrameTime, true);
 
 	auto& mvkCfg = getMVKConfig();
 	bool shouldLogOnFrames = mvkCfg.performanceTracking && mvkCfg.activityPerformanceLoggingStyle == MVK_CONFIG_ACTIVITY_PERFORMANCE_LOGGING_STYLE_FRAME_COUNT;
@@ -179,7 +177,7 @@ void MVKSwapchain::markFrameInterval() {
 		_currentPerfLogFrameCount = 0;
 		MVKLogInfo("Performance statistics reporting every: %d frames, avg FPS: %.2f, elapsed time: %.3f seconds:",
 				   mvkCfg.performanceLoggingFrameCount,
-				   (1000.0 / _device->_performanceStatistics.queue.frameInterval.average),
+				   (1000.0 / getPerformanceStats().queue.frameInterval.average),
 				   mvkGetElapsedMilliseconds() / 1000.0);
 		if (getMVKConfig().activityPerformanceLoggingStyle == MVK_CONFIG_ACTIVITY_PERFORMANCE_LOGGING_STYLE_FRAME_COUNT) {
 			_device->logPerformanceSummary();
@@ -247,11 +245,20 @@ VkResult MVKSwapchain::getPastPresentationTiming(uint32_t *pCount, VkPastPresent
 	return res;
 }
 
+VkResult MVKSwapchain::waitForPresent(uint64_t presentId, uint64_t timeout) {
+	std::unique_lock lock(_currentPresentIdMutex);
+	const auto success = _currentPresentIdCondVar.wait_for(lock, std::chrono::nanoseconds(timeout), [this, presentId] {
+		return _currentPresentId >= presentId || getConfigurationResult() == VK_ERROR_OUT_OF_DATE_KHR;
+	});
+	if (getConfigurationResult() == VK_ERROR_OUT_OF_DATE_KHR) return VK_ERROR_OUT_OF_DATE_KHR;
+	return success ? VK_SUCCESS : VK_TIMEOUT;
+}
+
 void MVKSwapchain::beginPresentation(const MVKImagePresentInfo& presentInfo) {
 	_unpresentedImageCount++;
 }
 
-void MVKSwapchain::endPresentation(const MVKImagePresentInfo& presentInfo, uint64_t actualPresentTime) {
+void MVKSwapchain::endPresentation(const MVKImagePresentInfo& presentInfo, uint64_t beginPresentTime, uint64_t actualPresentTime) {
 	_unpresentedImageCount--;
 
 	std::lock_guard<std::mutex> lock(_presentHistoryLock);
@@ -263,13 +270,19 @@ void MVKSwapchain::endPresentation(const MVKImagePresentInfo& presentInfo, uint6
 		_presentHistoryHeadIndex = (_presentHistoryHeadIndex + 1) % kMaxPresentationHistory;
 	}
 
-	_presentTimingHistory[_presentHistoryIndex].presentID = presentInfo.presentID;
+	_presentTimingHistory[_presentHistoryIndex].presentID = presentInfo.presentIDGoogle;
 	_presentTimingHistory[_presentHistoryIndex].desiredPresentTime = presentInfo.desiredPresentTime;
 	_presentTimingHistory[_presentHistoryIndex].actualPresentTime = actualPresentTime;
-	// These details are not available in Metal
+	// These details are not available in Metal, but can estimate earliestPresentTime by using actualPresentTime instead
 	_presentTimingHistory[_presentHistoryIndex].earliestPresentTime = actualPresentTime;
-	_presentTimingHistory[_presentHistoryIndex].presentMargin = 0;
+	_presentTimingHistory[_presentHistoryIndex].presentMargin = actualPresentTime > beginPresentTime ? actualPresentTime - beginPresentTime : 0;
 	_presentHistoryIndex = (_presentHistoryIndex + 1) % kMaxPresentationHistory;
+
+	if (presentInfo.presentId != 0) {
+		std::unique_lock pidLock(_currentPresentIdMutex);
+		_currentPresentId = std::max(_currentPresentId, presentInfo.presentId);
+		_currentPresentIdCondVar.notify_all();
+	}
 }
 
 // Because of a regression in Metal, the most recent one or two presentations may not complete
@@ -358,15 +371,16 @@ void MVKSwapchain::setHDRMetadataEXT(const VkHdrMetadataEXT& metadata) {
 	colorVol.min_display_mastering_luminance = OSSwapHostToBigInt32((uint32_t)(metadata.minLuminance * 10000));
 	lightLevel.max_content_light_level = OSSwapHostToBigInt16((uint16_t)metadata.maxContentLightLevel);
 	lightLevel.max_pic_average_light_level = OSSwapHostToBigInt16((uint16_t)metadata.maxFrameAverageLightLevel);
-	NSData* colorVolData = [NSData dataWithBytes: &colorVol length: sizeof(colorVol)];
-	NSData* lightLevelData = [NSData dataWithBytes: &lightLevel length: sizeof(lightLevel)];
-	CAEDRMetadata* caMetadata = [CAEDRMetadata HDR10MetadataWithDisplayInfo: colorVolData
-																contentInfo: lightLevelData
-														 opticalOutputScale: 1];
-	auto* mtlLayer = getCAMetalLayer();
-	mtlLayer.EDRMetadata = caMetadata;
-	mtlLayer.wantsExtendedDynamicRangeContent = YES;
-	[caMetadata release];
+	NSData* colorVolData = [[NSData alloc] initWithBytes: &colorVol length: sizeof(colorVol)];
+	NSData* lightLevelData = [[NSData alloc] initWithBytes: &lightLevel length: sizeof(lightLevel)];
+    @autoreleasepool {
+        CAEDRMetadata* caMetadata = [CAEDRMetadata HDR10MetadataWithDisplayInfo: colorVolData
+                                                                    contentInfo: lightLevelData
+                                                             opticalOutputScale: 1];
+        auto* mtlLayer = getCAMetalLayer();
+        mtlLayer.EDRMetadata = caMetadata;
+        mtlLayer.wantsExtendedDynamicRangeContent = YES;
+    }
 	[colorVolData release];
 	[lightLevelData release];
 #endif
@@ -419,9 +433,10 @@ MVKSwapchain::MVKSwapchain(MVKDevice* device, const VkSwapchainCreateInfoKHR* pC
 		}
 	}
 
+	auto& mtlFeats = getMetalFeatures();
 	uint32_t imgCnt = mvkClamp(pCreateInfo->minImageCount,
-							   _device->_pMetalFeatures->minSwapchainImageCount,
-							   _device->_pMetalFeatures->maxSwapchainImageCount);
+							   mtlFeats.minSwapchainImageCount,
+							   mtlFeats.maxSwapchainImageCount);
 	initCAMetalLayer(pCreateInfo, pScalingInfo, imgCnt);
     initSurfaceImages(pCreateInfo, imgCnt);		// After initCAMetalLayer()
 }
@@ -483,7 +498,8 @@ void MVKSwapchain::initCAMetalLayer(const VkSwapchainCreateInfoKHR* pCreateInfo,
 	mtlLayer.framebufferOnly = !mvkIsAnyFlagEnabled(pCreateInfo->imageUsage, (VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
 																			  VK_IMAGE_USAGE_TRANSFER_DST_BIT |
 																			  VK_IMAGE_USAGE_SAMPLED_BIT |
-																			  VK_IMAGE_USAGE_STORAGE_BIT));
+																			  VK_IMAGE_USAGE_STORAGE_BIT)) &&
+								!mvkAreAllFlagsEnabled(pCreateInfo->flags, VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR);
 
 	// Because of a regression in Metal, the most recent one or two presentations may not
 	// complete and call back. Changing the CAMetalLayer drawableSize will force any incomplete
@@ -615,9 +631,12 @@ void MVKSwapchain::initSurfaceImages(const VkSwapchainCreateInfoKHR* pCreateInfo
 	if (mtlLayer) {
 		NSString* screenName = @"Main Screen";
 #if MVK_MACOS && !MVK_MACCAT
-		auto* screen = mtlLayer.screenMVK;
-		if ([screen respondsToSelector:@selector(localizedName)]) {
-			screenName = screen.localizedName;
+		// To prevent deadlocks, avoid dispatching screenMVK to the main thread at the cost of a less informative log.
+		if (NSThread.isMainThread) {
+			auto* screen = mtlLayer.screenMVK;
+			if ([screen respondsToSelector:@selector(localizedName)]) {
+				screenName = screen.localizedName;
+			}
 		}
 #endif
 		MVKLogInfo("Created %d swapchain images with size (%d, %d) and contents scale %.1f in layer %s (%p) on screen %s.",

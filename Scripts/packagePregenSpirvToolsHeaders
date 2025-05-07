@@ -2,7 +2,7 @@
 #
 # Copyright (c) 2016-2022 The Brenwill Workshop Ltd.
 #
-# packagePregenSpirvToolsHeaders - Packages Spirv-Tools headers to simplify building glslang
+# packagePregenSpirvToolsHeaders - Packages Spirv-Tools headers to simplify building SPIRV-Tools.
 #
 # macOS usage: ./packagePregenSpirvToolsHeaders
 #
@@ -10,7 +10,7 @@
 set -e
 
 EXT_DIR=../External
-SPV_TLS_BLD_DIR="${EXT_DIR}/glslang/External/spirv-tools/build"
+SPV_TLS_BLD_DIR="${EXT_DIR}/SPIRV-Tools/build"
 TPLT_DIR=../Templates/spirv-tools
 TPLT_BLD_DIR="${TPLT_DIR}/build"
 

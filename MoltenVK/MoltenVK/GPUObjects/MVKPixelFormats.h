@@ -1,7 +1,7 @@
 /*
  * MVKPixelFormats.h
  *
- * Copyright (c) 2015-2024 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@
 #import <Metal/Metal.h>
 
 class MVKPhysicalDevice;
+struct MVKMTLDeviceCapabilities;
 
 
 #pragma mark -
@@ -154,10 +155,10 @@ typedef struct MVKVkFormatDesc {
 	inline bool vertexIsSupportedOrSubstitutable() const { return vertexIsSupported() || (mtlVertexFormatSubstitute != MTLVertexFormatInvalid); };
 
 	bool needsSwizzle() const {
-		return componentMapping.r != VK_COMPONENT_SWIZZLE_IDENTITY ||
-			componentMapping.g != VK_COMPONENT_SWIZZLE_IDENTITY ||
-			componentMapping.b != VK_COMPONENT_SWIZZLE_IDENTITY ||
-			componentMapping.a != VK_COMPONENT_SWIZZLE_IDENTITY;
+		return (componentMapping.r != VK_COMPONENT_SWIZZLE_IDENTITY ||
+				componentMapping.g != VK_COMPONENT_SWIZZLE_IDENTITY ||
+				componentMapping.b != VK_COMPONENT_SWIZZLE_IDENTITY ||
+				componentMapping.a != VK_COMPONENT_SWIZZLE_IDENTITY);
 	}
 } MVKVkFormatDesc;
 
@@ -409,35 +410,21 @@ protected:
 	MVKVkFormatDesc& getVkFormatDesc(VkFormat vkFormat);
 	MVKVkFormatDesc& getVkFormatDesc(MTLPixelFormat mtlFormat);
 	MVKMTLFormatDesc& getMTLPixelFormatDesc(MTLPixelFormat mtlFormat);
+	MVKMTLFmtCaps& getMTLPixelFormatCapsIf(MTLPixelFormat mtlPixFmt, bool cond);
 	MVKMTLFormatDesc& getMTLVertexFormatDesc(MTLVertexFormat mtlFormat);
 	id<MTLDevice> getMTLDevice();
 	void initVkFormatCapabilities();
-	void initMTLPixelFormatCapabilities();
-	void initMTLVertexFormatCapabilities();
-	void buildVkFormatMaps(id<MTLDevice> mtlDevice);
-	void setFormatProperties(id<MTLDevice> mtlDevice, MVKVkFormatDesc& vkDesc);
-	void modifyMTLFormatCapabilities(id<MTLDevice> mtlDevice);
-	void addMTLPixelFormatCapabilities(id<MTLDevice> mtlDevice,
-									   MTLFeatureSet mtlFeatSet,
-									   MTLPixelFormat mtlPixFmt,
-									   MVKMTLFmtCaps mtlFmtCaps);
-	void addMTLPixelFormatCapabilities(id<MTLDevice> mtlDevice,
-									   MTLGPUFamily gpuFamily,
-									   MVKOSVersion minOSVer,
-									   MTLPixelFormat mtlPixFmt,
-									   MVKMTLFmtCaps mtlFmtCaps);
-	void disableMTLPixelFormatCapabilities(MTLPixelFormat mtlPixFmt,
-										   MVKMTLFmtCaps mtlFmtCaps);
-	void disableAllMTLPixelFormatCapabilities(MTLPixelFormat mtlPixFmt);
-	void addMTLVertexFormatCapabilities(id<MTLDevice> mtlDevice,
-										MTLFeatureSet mtlFeatSet,
-										MTLVertexFormat mtlVtxFmt,
-										MVKMTLFmtCaps mtlFmtCaps);
-	void addMTLVertexFormatCapabilities(id<MTLDevice> mtlDevice,
-										MTLGPUFamily gpuFamily,
-										MVKOSVersion minOSVer,
-										MTLVertexFormat mtlVtxFmt,
-										MVKMTLFmtCaps mtlFmtCaps);
+	void initMTLPixelFormatCapabilities(const MVKMTLDeviceCapabilities& gpuCaps);
+	void initMTLVertexFormatCapabilities(const MVKMTLDeviceCapabilities& gpuCaps);
+	void modifyMTLFormatCapabilities(const MVKMTLDeviceCapabilities& gpuCaps);
+	void buildVkFormatMaps(const MVKMTLDeviceCapabilities& gpuCaps);
+	void setFormatProperties(MVKVkFormatDesc& vkDesc, const MVKMTLDeviceCapabilities& gpuCaps);
+	void addMTLPixelFormatDescImpl(MTLPixelFormat mtlPixFmt, MTLPixelFormat mtlPixFmtLinear,
+								   MVKMTLViewClass viewClass, MVKMTLFmtCaps fmtCaps, const char* name);
+	void addValidatedMTLPixelFormatDesc(MTLPixelFormat mtlPixFmt, MTLPixelFormat mtlPixFmtLinear,
+										MVKMTLViewClass viewClass, MVKMTLFmtCaps appleGPUCaps, MVKMTLFmtCaps macGPUCaps,
+										const MVKMTLDeviceCapabilities& mtlDevCaps, const char* name);
+	void addMTLVertexFormatDescImpl(MTLVertexFormat mtlVtxFmt, MVKMTLFmtCaps vtxCap, const char* name);
 
 	MVKPhysicalDevice* _physicalDevice;
 	MVKInflectionMap<VkFormat, MVKVkFormatDesc, VK_FORMAT_ASTC_12x12_SRGB_BLOCK + 1> _vkFormatDescriptions;

@@ -1,7 +1,7 @@
 /*
  * MVKMTLResourceBindings.h
  *
- * Copyright (c) 2015-2024 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -100,6 +100,7 @@ typedef struct MVKMTLBufferBinding {
 typedef struct MVKIndexMTLBufferBinding {
     union { id<MTLBuffer> mtlBuffer = nil; id<MTLBuffer> mtlResource; }; // aliases
     VkDeviceSize offset = 0;
+    VkDeviceSize size = 0;
     uint8_t mtlIndexType = 0;		// MTLIndexType
     bool isDirty = true;
 } MVKIndexMTLBufferBinding;
