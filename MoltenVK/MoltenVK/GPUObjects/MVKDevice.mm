@@ -2886,7 +2886,7 @@ void MVKPhysicalDevice::initLimits() {
 	_properties.limits.maxDescriptorSetInputAttachments = (_properties.limits.maxPerStageDescriptorInputAttachments * 5);
 
 	_properties.limits.maxClipDistances = 8;	// Per Apple engineers.
-	_properties.limits.maxCullDistances = 0;	// unsupported
+	_properties.limits.maxCullDistances = 8;	// L'et's pretend it is supported
 	_properties.limits.maxCombinedClipAndCullDistances = max(_properties.limits.maxClipDistances,
 															 _properties.limits.maxCullDistances);  // If supported, these consume the same slots.
 
