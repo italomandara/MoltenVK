@@ -131,6 +131,48 @@ void MVKSemaphoreMTLEvent::encodeDeferredSignal(id<MTLCommandBuffer> mtlCmdBuff,
 	[mtlCmdBuff encodeSignalEvent: _mtlEvent value: deferToken];
 }
 
+VkResult MVKSemaphoreMTLEvent::importFd(VkSemaphoreImportFlags flags, VkExternalSemaphoreHandleTypeFlagBits handleType, int fd) {
+	if (handleType != VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT || fd != -1) {
+		return reportError(VK_ERROR_INVALID_EXTERNAL_HANDLE, "importFd(): Only VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT with fd == -1 is supported.");
+	}
+	/**
+	* If handleType is `VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT`, the special
+	* value -1 for fd is treated like a valid sync file descriptor referring to an object that has already
+	* signaled. The import operation will succeed and the VkFence will have a temporarily
+	* imported payload as if a valid file descriptor had been provided.
+	*/
+	/**
+	* If handleType is `VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT`, the special
+	* value -1 for fd is treated like a valid sync file descriptor referring to an object that has already
+	* signaled. The import operation will succeed and the VkSemaphore will have a temporarily
+	* imported payload as if a valid file descriptor had been provided.
+	*/
+	uint64_t value = _mtlEventValue.load();
+	[(id<MTLSharedEvent>)_mtlEvent setSignaledValue:value];
+	return VK_SUCCESS;
+}
+
+VkResult MVKSemaphoreMTLEvent::exportFd(VkExternalSemaphoreHandleTypeFlagBits handleType, int *pFd) {
+	if (handleType != VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT) {
+		return reportError(VK_ERROR_INVALID_EXTERNAL_HANDLE, "exportFd(): Only VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT is supported.");
+	}
+	/**
+	* `VUID-VkSemaphoreGetFdInfoKHR-handleType-03254`
+	* If handleType refers to a handle type with copy payload transference semantics, semaphore
+	* must have an associated semaphore signal operation that has been submitted for execution
+	* and any semaphore signal operations on which it depends must have also been submitted
+	* for execution
+	*/
+	/**
+	* ... exporting a semaphore payload to a handle with copy transference has the same side
+	* effects on the source semaphore’s payload as executing a semaphore wait operation.
+	*/
+	uint64_t value = _mtlEventValue.load();
+	[(id<MTLSharedEvent>)_mtlEvent waitUntilSignaledValue:value timeoutMS:kMVKUndefinedLargeUInt64];
+	*pFd = -1;
+	return VK_SUCCESS;
+}
+
 MVKSemaphoreMTLEvent::MVKSemaphoreMTLEvent(MVKDevice* device,
 										   const VkSemaphoreCreateInfo* pCreateInfo,
 										   const VkExportMetalObjectCreateInfoEXT* pExportInfo,
@@ -144,7 +186,11 @@ MVKSemaphoreMTLEvent::MVKSemaphoreMTLEvent(MVKDevice* device,
 		_mtlEvent = [getMTLDevice() newSharedEvent];	//retained
 		_mtlEventValue = ((id<MTLSharedEvent>)_mtlEvent).signaledValue + 1;
 	} else {
-		_mtlEvent = [getMTLDevice() newEvent];			//retained
+		// We might use importFd()/exportFd() so we need a MTLSharedEvent
+		// At creation, we might know about potential exports when
+		// `VkExportSemaphoreCreateInfo` is present but we have no idea
+		// if imports might happen.
+		_mtlEvent = [getMTLDevice() newSharedEvent];			//retained
 		_mtlEventValue = 1;
 	}
 }
@@ -254,81 +300,6 @@ MVKTimelineSemaphoreMTLEvent::~MVKTimelineSemaphoreMTLEvent() {
 
 
 #pragma mark -
-#pragma mark MVKTimelineSemaphoreEmulated
-
-void MVKTimelineSemaphoreEmulated::encodeWait(id<MTLCommandBuffer> mtlCmdBuff, uint64_t value) {
-	unique_lock<mutex> lock(_lock);
-	if ( !mtlCmdBuff ) {
-		_device->addTimelineSemaphore(this, value);
-		_blocker.wait(lock, [=]() { return _value >= value; });
-		_device->removeTimelineSemaphore(this, value);
-	}
-}
-
-void MVKTimelineSemaphoreEmulated::encodeSignal(id<MTLCommandBuffer> mtlCmdBuff, uint64_t value) {
-	lock_guard<mutex> lock(_lock);
-	if ( !mtlCmdBuff ) { signalImpl(value); }
-}
-
-void MVKTimelineSemaphoreEmulated::signal(const VkSemaphoreSignalInfo* pSignalInfo) {
-	lock_guard<mutex> lock(_lock);
-	signalImpl(pSignalInfo->value);
-}
-
-void MVKTimelineSemaphoreEmulated::signalImpl(uint64_t value) {
-	if (value > _value) {
-		_value = value;
-		_blocker.notify_all();
-		for (auto& sittersForValue : _sitters) {
-			if (sittersForValue.first > value) { continue; }
-			for (auto* sitter : sittersForValue.second) {
-				sitter->signaled();
-			}
-		}
-	}
-}
-
-bool MVKTimelineSemaphoreEmulated::registerWait(MVKFenceSitter* sitter, const VkSemaphoreWaitInfo* pWaitInfo, uint32_t index) {
-	lock_guard<mutex> lock(_lock);
-	if (pWaitInfo->pValues[index] >= _value) { return true; }
-	uint64_t value = pWaitInfo->pValues[index];
-	if (!_sitters.count(value)) { _sitters.emplace(make_pair(value, unordered_set<MVKFenceSitter*>())); }
-	auto addRslt = _sitters[value].insert(sitter);
-	if (addRslt.second) {
-		_device->addSemaphore(&sitter->_blocker);
-		sitter->await();
-	}
-	return false;
-}
-
-void MVKTimelineSemaphoreEmulated::unregisterWait(MVKFenceSitter* sitter) {
-	MVKSmallVector<uint64_t> emptySets;
-	for (auto& sittersForValue : _sitters) {
-		_device->removeSemaphore(&sitter->_blocker);
-		sittersForValue.second.erase(sitter);
-		// Can't destroy while iterating...
-		if (sittersForValue.second.empty()) {
-			emptySets.push_back(sittersForValue.first);
-		}
-	}
-	for (auto value : emptySets) { _sitters.erase(value); }
-}
-
-MVKTimelineSemaphoreEmulated::MVKTimelineSemaphoreEmulated(MVKDevice* device,
-														   const VkSemaphoreCreateInfo* pCreateInfo,
-														   const VkSemaphoreTypeCreateInfo* pTypeCreateInfo,
-														   const VkExportMetalObjectCreateInfoEXT* pExportInfo,
-														   const VkImportMetalSharedEventInfoEXT* pImportInfo) :
-	MVKTimelineSemaphore(device, pCreateInfo),
-	_value(pTypeCreateInfo ? pTypeCreateInfo->initialValue : 0) {
-
-	if ((pImportInfo && pImportInfo->mtlSharedEvent) || (pExportInfo && pExportInfo->exportObjectType == VK_EXPORT_METAL_OBJECT_TYPE_METAL_SHARED_EVENT_BIT_EXT)) {
-		setConfigurationResult(reportError(VK_ERROR_INITIALIZATION_FAILED, "vkCreateEvent(): MTLSharedEvent is not available on this platform."));
-	}
-}
-
-
-#pragma mark -
 #pragma mark MVKFence
 
 void MVKFence::addSitter(MVKFenceSitter* fenceSitter) {
@@ -428,55 +399,6 @@ MVKEventNative::MVKEventNative(MVKDevice* device,
 
 MVKEventNative::~MVKEventNative() {
 	[_mtlEvent release];
-}
-
-
-#pragma mark -
-#pragma mark MVKEventEmulated
-
-bool MVKEventEmulated::isSet() { return !_blocker.isReserved(); }
-
-void MVKEventEmulated::signal(bool status) {
-	if (status) {
-		_blocker.release();
-	} else {
-		_blocker.reserve();
-	}
-}
-
-void MVKEventEmulated::encodeSignal(id<MTLCommandBuffer> mtlCmdBuff, bool status) {
-	if (status) {
-		[mtlCmdBuff addCompletedHandler: ^(id<MTLCommandBuffer> mcb) { _blocker.release(); }];
-	} else {
-		_blocker.reserve();
-	}
-
-	// An encoded signal followed by an encoded wait should cause the wait to be skipped.
-	// However, because encoding a signal will not release the blocker until the command buffer
-	// is finished executing (so the CPU can tell when it really is done) it is possible that
-	// the encoded wait will block when it shouldn't. To avoid that, we keep track of whether
-	// the most recent encoded signal was set or reset, so the next encoded wait knows whether
-	// to really wait or not.
-	_inlineSignalStatus = status;
-}
-
-void MVKEventEmulated::encodeWait(id<MTLCommandBuffer> mtlCmdBuff) {
-	if ( !_inlineSignalStatus ) {
-		_device->addSemaphore(&_blocker);
-		_blocker.wait();
-		_device->removeSemaphore(&_blocker);
-	}
-}
-
-MVKEventEmulated::MVKEventEmulated(MVKDevice* device,
-								   const VkEventCreateInfo* pCreateInfo,
-								   const VkExportMetalObjectCreateInfoEXT* pExportInfo,
-								   const VkImportMetalSharedEventInfoEXT* pImportInfo) :
-	MVKEvent(device, pCreateInfo, pExportInfo, pImportInfo), _blocker(false, 1), _inlineSignalStatus(false) {
-
-	if (pExportInfo && pExportInfo->exportObjectType == VK_EXPORT_METAL_OBJECT_TYPE_METAL_SHARED_EVENT_BIT_EXT) {
-		setConfigurationResult(reportError(VK_ERROR_INITIALIZATION_FAILED, "vkCreateEvent(): MTLSharedEvent is not available on this platform."));
-	}
 }
 
 

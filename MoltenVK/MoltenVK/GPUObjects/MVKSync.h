@@ -191,6 +191,15 @@ public:
 	 */
 	virtual id<MTLSharedEvent> getMTLSharedEvent() { return nil; };
 
+	/**
+	 * Import a semaphore from a file descriptor
+	 */
+	virtual VkResult importFd(VkSemaphoreImportFlags flags, VkExternalSemaphoreHandleTypeFlagBits handleType, int fd) { return VK_ERROR_FEATURE_NOT_PRESENT; };
+
+	/**
+	 * Export a semaphore to a file descriptor
+	 */
+	virtual VkResult exportFd(VkExternalSemaphoreHandleTypeFlagBits handleType, int *pFd) { return VK_ERROR_FEATURE_NOT_PRESENT; };
 
 #pragma mark Construction
 
@@ -241,6 +250,8 @@ public:
 	uint64_t deferSignal() override;
 	void encodeDeferredSignal(id<MTLCommandBuffer> mtlCmdBuff, uint64_t deferToken) override;
 	bool isUsingCommandEncoding() override { return true; }
+	VkResult importFd(VkSemaphoreImportFlags flags, VkExternalSemaphoreHandleTypeFlagBits handleType, int fd) override;
+	VkResult exportFd(VkExternalSemaphoreHandleTypeFlagBits handleType, int *pFd) override;
 
 	MVKSemaphoreMTLEvent(MVKDevice* device,
 						 const VkSemaphoreCreateInfo* pCreateInfo,
@@ -347,38 +358,6 @@ protected:
 
 
 #pragma mark -
-#pragma mark MVKTimelineSemaphoreEmulated
-
-/** An MVKTimelineSemaphore that uses CPU synchronization to provide synchronization functionality. */
-class MVKTimelineSemaphoreEmulated : public MVKTimelineSemaphore {
-
-public:
-	void encodeWait(id<MTLCommandBuffer> mtlCmdBuff, uint64_t value) override;
-	void encodeSignal(id<MTLCommandBuffer> mtlCmdBuff, uint64_t value) override;
-	bool isUsingCommandEncoding() override { return false; }
-
-	uint64_t getCounterValue() override { return _value; }
-	void signal(const VkSemaphoreSignalInfo* pSignalInfo) override;
-	bool registerWait(MVKFenceSitter* sitter, const VkSemaphoreWaitInfo* pWaitInfo, uint32_t index) override;
-	void unregisterWait(MVKFenceSitter* sitter) override;
-
-	MVKTimelineSemaphoreEmulated(MVKDevice* device,
-								 const VkSemaphoreCreateInfo* pCreateInfo,
-								 const VkSemaphoreTypeCreateInfo* pTypeCreateInfo,
-								 const VkExportMetalObjectCreateInfoEXT* pExportInfo,
-								 const VkImportMetalSharedEventInfoEXT* pImportInfo);
-
-protected:
-	void signalImpl(uint64_t value);
-
-	std::atomic<uint64_t> _value;
-	std::mutex _lock;
-	std::condition_variable _blocker;
-	std::unordered_map<uint64_t, std::unordered_set<MVKFenceSitter*>> _sitters;
-};
-
-
-#pragma mark -
 #pragma mark MVKFence
 
 /** Represents a Vulkan fence. */
@@ -417,7 +396,6 @@ public:
 	/** Returns whether this fence has been signaled and not reset. */
 	bool getIsSignaled();
 
-	
 #pragma mark Construction
 
     MVKFence(MVKDevice* device, const VkFenceCreateInfo* pCreateInfo) :
@@ -466,7 +444,6 @@ public:
 private:
 	friend class MVKFence;
 	friend class MVKTimelineSemaphoreMTLEvent;
-	friend class MVKTimelineSemaphoreEmulated;
 
 	MTLSharedEventListener* getMTLSharedEventListener();
 
@@ -543,30 +520,6 @@ public:
 
 protected:
 	id<MTLSharedEvent> _mtlEvent;
-};
-
-
-#pragma mark -
-#pragma mark MVKEventEmulated
-
-/** An MVKEvent that uses CPU synchronization to provide VkEvent functionality. */
-class MVKEventEmulated : public MVKEvent {
-
-public:
-	bool isSet() override;
-	void signal(bool status) override;
-	void encodeSignal(id<MTLCommandBuffer> mtlCmdBuff, bool status) override;
-	void encodeWait(id<MTLCommandBuffer> mtlCmdBuff) override;
-	id<MTLSharedEvent> getMTLSharedEvent() override { return nil; };
-
-	MVKEventEmulated(MVKDevice* device,
-					 const VkEventCreateInfo* pCreateInfo,
-					 const VkExportMetalObjectCreateInfoEXT* pExportInfo,
-					 const VkImportMetalSharedEventInfoEXT* pImportInfo);
-
-protected:
-	MVKSemaphoreImpl _blocker;
-	bool _inlineSignalStatus;
 };
 
 

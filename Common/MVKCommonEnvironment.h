@@ -76,19 +76,9 @@ extern "C" {
 #	define MVK_VISIONOS				(TARGET_OS_XR || TARGET_OS_VISION)
 #endif
 
-/** Building for iOS or tvOS. */
-#ifndef MVK_IOS_OR_TVOS
-#	define MVK_IOS_OR_TVOS			(MVK_IOS || MVK_TVOS)
-#endif
-
 /** Building for macOS or iOS. */
 #ifndef MVK_MACOS_OR_IOS
 #	define MVK_MACOS_OR_IOS			(MVK_MACOS || MVK_IOS)
-#endif
-
-/** Building for iOS or visionOS. */
-#ifndef MVK_IOS_OR_VISIONOS
-#    define MVK_IOS_OR_VISIONOS    (MVK_IOS || MVK_VISIONOS)
 #endif
 
 /** Building for a Simulator. */
@@ -96,46 +86,18 @@ extern "C" {
 #	define MVK_OS_SIMULATOR			TARGET_OS_SIMULATOR
 #endif
 
-/** Building for Apple Silicon on iOS, tvOS, or macOS platform. */
-#ifndef MVK_APPLE_SILICON
-#	define MVK_APPLE_SILICON    	TARGET_CPU_ARM64
-#endif
-
-/** Building for macOS with support for Apple Silicon. */
-#ifndef MVK_MACOS_APPLE_SILICON
-#	define MVK_MACOS_APPLE_SILICON	(MVK_MACOS && MVK_APPLE_SILICON)
-#endif
-
 /** Building with Xcode versions. */
+#ifndef MVK_XCODE_26
+#   define MVK_XCODE_26             ((__MAC_OS_X_VERSION_MAX_ALLOWED >= 260000) || \
+                                    (__IPHONE_OS_VERSION_MAX_ALLOWED >= 260000) || \
+                                    (__VISION_OS_VERSION_MAX_ALLOWED >= 260000) || \
+                                        (__TV_OS_VERSION_MAX_ALLOWED >= 260000))
+#endif
 #ifndef MVK_XCODE_16
 #   define MVK_XCODE_16             ((__MAC_OS_X_VERSION_MAX_ALLOWED >= 150000) || \
                                     (__IPHONE_OS_VERSION_MAX_ALLOWED >= 180000) || \
+                                    (__VISION_OS_VERSION_MAX_ALLOWED >= 20000) || \
                                         (__TV_OS_VERSION_MAX_ALLOWED >= 180000))
-#endif
-#ifndef MVK_XCODE_15
-#   define MVK_XCODE_15             ((__MAC_OS_X_VERSION_MAX_ALLOWED >= 140000) || \
-                                    (__IPHONE_OS_VERSION_MAX_ALLOWED >= 170000) || \
-                                        (__TV_OS_VERSION_MAX_ALLOWED >= 170000))
-#endif
-#ifndef MVK_XCODE_14_3
-#	define MVK_XCODE_14_3			((__MAC_OS_X_VERSION_MAX_ALLOWED >= 130300) || \
-									(__IPHONE_OS_VERSION_MAX_ALLOWED >= 160400) || \
-                                        (__TV_OS_VERSION_MAX_ALLOWED >= 160400))
-#endif
-#ifndef MVK_XCODE_14
-#	define MVK_XCODE_14				((__MAC_OS_X_VERSION_MAX_ALLOWED >= 130000) || \
-									(__IPHONE_OS_VERSION_MAX_ALLOWED >= 160000) || \
-                                        (__TV_OS_VERSION_MAX_ALLOWED >= 160000))
-#endif
-#ifndef MVK_XCODE_13
-#	define MVK_XCODE_13 			((__MAC_OS_X_VERSION_MAX_ALLOWED >= 120000) || \
-									(__IPHONE_OS_VERSION_MAX_ALLOWED >= 150000 || \
-                                        (__TV_OS_VERSION_MAX_ALLOWED >= 150000)))
-#endif
-#ifndef MVK_XCODE_12
-#	define MVK_XCODE_12 			((__MAC_OS_X_VERSION_MAX_ALLOWED >= 110000) || \
-									(__IPHONE_OS_VERSION_MAX_ALLOWED >= 140000 || \
-                                        (__TV_OS_VERSION_MAX_ALLOWED >= 140000)))
 #endif
 
 /**

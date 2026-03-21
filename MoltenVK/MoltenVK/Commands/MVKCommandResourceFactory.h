@@ -20,6 +20,7 @@
 
 #include "MVKDevice.h"
 #include "MVKFoundation.h"
+#include "MVKStateTracking.h"
 #include "mvk_datatypes.hpp"
 #include <string>
 
@@ -43,13 +44,8 @@ typedef struct MVKRPSKeyBlitImg {
 	uint8_t srcFilter : 4;					/**< as MTLSamplerMinMagFilter */
 	uint8_t srcAspect = 0;					/**< as VkImageAspectFlags */
 	uint8_t dstSampleCount = 0;
-	uint8_t srcSwizzleR : 4;				/**< as VkComponentSwizzle */
-	uint8_t srcSwizzleG : 4;				/**< as VkComponentSwizzle */
-	uint8_t srcSwizzleB : 4;				/**< as VkComponentSwizzle */
-	uint8_t srcSwizzleA : 4;				/**< as VkComponentSwizzle */
 
-	MVKRPSKeyBlitImg() : srcMTLPixelFormat(0), dstMTLPixelFormat(0), srcMTLTextureType(0), srcFilter(0),
-		srcSwizzleR(0), srcSwizzleG(0), srcSwizzleB(0), srcSwizzleA(0) {}
+	MVKRPSKeyBlitImg() : srcMTLPixelFormat(0), dstMTLPixelFormat(0), srcMTLTextureType(0), srcFilter(0) {}
 
 	bool operator==(const MVKRPSKeyBlitImg& rhs) const {
 		if (srcMTLPixelFormat != rhs.srcMTLPixelFormat) { return false; }
@@ -58,10 +54,6 @@ typedef struct MVKRPSKeyBlitImg {
 		if (srcFilter != rhs.srcFilter) { return false; }
 		if (srcAspect != rhs.srcAspect) { return false; }
 		if (dstSampleCount != rhs.dstSampleCount) { return false; }
-		if (srcSwizzleR != rhs.srcSwizzleR) { return false; }
-		if (srcSwizzleG != rhs.srcSwizzleG) { return false; }
-		if (srcSwizzleB != rhs.srcSwizzleB) { return false; }
-		if (srcSwizzleA != rhs.srcSwizzleA) { return false; }
 		return true;
 	}
 
@@ -75,15 +67,8 @@ typedef struct MVKRPSKeyBlitImg {
 
 	inline bool isSrcArrayType() {
 		return (srcMTLTextureType == MTLTextureType2DArray ||
-#if MVK_MACOS_OR_IOS
 				srcMTLTextureType == MTLTextureType2DMultisampleArray ||
-#endif
 				srcMTLTextureType == MTLTextureType1DArray);
-	}
-
-	VkComponentMapping getSrcSwizzle() {
-		return { (VkComponentSwizzle)srcSwizzleR, (VkComponentSwizzle)srcSwizzleG,
-			 (VkComponentSwizzle)srcSwizzleB, (VkComponentSwizzle)srcSwizzleA };
 	}
 
 	std::size_t hash() const {
@@ -103,18 +88,6 @@ typedef struct MVKRPSKeyBlitImg {
 
 		hash <<= 8;
 		hash |= dstSampleCount;
-
-		hash <<= 4;
-		hash |= srcSwizzleR;
-
-		hash <<= 4;
-		hash |= srcSwizzleG;
-
-		hash <<= 4;
-		hash |= srcSwizzleB;
-
-		hash <<= 4;
-		hash |= srcSwizzleA;
 		return hash;
 	}
 
@@ -195,92 +168,6 @@ namespace std {
     template <>
     struct hash<MVKRPSKeyClearAtt> {
         std::size_t operator()(const MVKRPSKeyClearAtt& k) const { return k.hash(); }
-    };
-}
-
-
-#pragma mark -
-#pragma mark MVKMTLDepthStencilDescriptorData
-
-/**
- * A structure to hold configuration data for creating an MTLStencilDescriptor instance.
- *
- * The order of elements is designed to "fail-fast", with the more commonly changing elements
- * situated near the beginning of the structure so that a memory comparison will detect any
- * change as early as possible.
- */
-typedef struct MVKMTLStencilDescriptorData {
-	uint32_t readMask;					/**< The bit-mask to apply when comparing the stencil buffer value to the reference value. */
-	uint32_t writeMask;					/**< The bit-mask to apply when writing values to the stencil buffer. */
-    uint8_t stencilCompareFunction;		/**< The stencil compare function (interpreted as MTLCompareFunction). */
-    uint8_t stencilFailureOperation;	/**< The operation to take when the stencil test fails (interpreted as MTLStencilOperation). */
-    uint8_t depthFailureOperation;		/**< The operation to take when the stencil test passes, but the depth test fails (interpreted as MTLStencilOperation). */
-    uint8_t depthStencilPassOperation;	/**< The operation to take when both the stencil and depth tests pass (interpreted as MTLStencilOperation). */
-
-	bool operator==(const MVKMTLStencilDescriptorData& rhs) const { return mvkAreEqual(this, &rhs); }
-	bool operator!=(const MVKMTLStencilDescriptorData& rhs) const { return !(*this == rhs); }
-
-    MVKMTLStencilDescriptorData() {
-        mvkClear(this);  // Clear all memory to ensure memory comparisons will work.
-		mvkEnableAllFlags(readMask);
-		mvkEnableAllFlags(writeMask);
-        stencilCompareFunction = MTLCompareFunctionAlways;
-        stencilFailureOperation = MTLStencilOperationKeep;
-        depthFailureOperation = MTLStencilOperationKeep;
-        depthStencilPassOperation = MTLStencilOperationKeep;
-    }
-
-} MVKMTLStencilDescriptorData;
-
-/** An instance populated with default values, for use in resetting other instances to default state. */
-const MVKMTLStencilDescriptorData kMVKMTLStencilDescriptorDataDefault;
-
-/**
- * A structure to hold configuration data for creating an MTLDepthStencilDescriptor instance.
- * Instances of this structure can be used as a map key.
- *
- * The order of elements is designed to "fail-fast", with the more commonly changing elements
- * situated near the beginning of the structure so that a memory comparison will detect any
- * change as early as possible.
- */
-typedef struct MVKMTLDepthStencilDescriptorData {
-    MVKMTLStencilDescriptorData frontFaceStencilData;
-    MVKMTLStencilDescriptorData backFaceStencilData;
-	uint8_t depthCompareFunction;		/**< The depth compare function (interpreted as MTLCompareFunction). */
-	bool depthWriteEnabled;				/**< Indicates whether depth writing is enabled. */
-	bool stencilTestEnabled;			/**< Indicates whether stencil testing is enabled. */
-
-	bool operator==(const MVKMTLDepthStencilDescriptorData& rhs) const { return mvkAreEqual(this, &rhs); }
-	bool operator!=(const MVKMTLDepthStencilDescriptorData& rhs) const { return !(*this == rhs); }
-
-	std::size_t hash() const {
-		return mvkHash((uint64_t*)this, sizeof(*this) / sizeof(uint64_t));
-	}
-	void disableDepth() {
-		depthCompareFunction = MTLCompareFunctionAlways;
-		depthWriteEnabled = false;
-	}
-	void disableStencil() {
-		stencilTestEnabled = false;
-		frontFaceStencilData = kMVKMTLStencilDescriptorDataDefault;
-		backFaceStencilData = kMVKMTLStencilDescriptorDataDefault;
-	}
-
-	MVKMTLDepthStencilDescriptorData() {
-		mvkClear(this);  // Clear all memory to ensure memory comparisons will work.
-		disableDepth();
-		disableStencil();
-	}
-
-} __attribute__((aligned(sizeof(uint64_t)))) MVKMTLDepthStencilDescriptorData;
-
-/** An instance populated with default values, for use in resetting other instances to default state. */
-const MVKMTLDepthStencilDescriptorData kMVKMTLDepthStencilDescriptorDataDefault;
-
-namespace std {
-    template <>
-    struct hash<MVKMTLDepthStencilDescriptorData> {
-        std::size_t operator()(const MVKMTLDepthStencilDescriptorData& k) const { return k.hash(); }
     };
 }
 
@@ -461,10 +348,6 @@ public:
 	id<MTLComputePipelineState> newCmdResolveColorImageMTLComputePipelineState(MVKFormatType type,
 																			   MVKVulkanAPIDeviceObject* owner,
 																			   bool isTextureArray);
-
-	/** Returns a new MTLComputePipelineState for copying between a buffer holding compressed data and a 3D image. */
-	id<MTLComputePipelineState> newCmdCopyBufferToImage3DDecompressMTLComputePipelineState(bool needTempBuf,
-																						   MVKVulkanAPIDeviceObject* owner);
 
 	/** Returns a new MTLComputePipelineState for populating an indirect index buffer from a non-indexed indirect buffer. */
 	id<MTLComputePipelineState> newCmdDrawIndirectPopulateIndexesMTLComputePipelineState(MVKVulkanAPIDeviceObject* owner);

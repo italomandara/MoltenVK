@@ -80,7 +80,7 @@ public:
 							  uint32_t* pImageIndex);
 
 	/** Releases swapchain images. */
-	VkResult releaseImages(const VkReleaseSwapchainImagesInfoEXT* pReleaseInfo);
+	VkResult releaseImages(const VkReleaseSwapchainImagesInfoKHR* pReleaseInfo);
 
 	/** Returns the status of the surface. Surface loss takes precedence over sub-optimal errors. */
 	VkResult getSurfaceStatus();
@@ -95,7 +95,7 @@ public:
 	VkResult getPastPresentationTiming(uint32_t *pCount, VkPastPresentationTimingGOOGLE *pPresentationTimings);
 
 	/** Waits for the swapchain present ID to meet or exceed the provided ID. */
-	VkResult waitForPresent(uint64_t presentId, uint64_t timeout);
+	VkResult waitForPresent(const VkPresentWait2InfoKHR* pWaitInfo);
 
 	/** Marks parts of the underlying CAMetalLayer as needing update. */
 	void setLayerNeedsDisplay(const VkPresentRegionKHR* pRegion);
@@ -113,7 +113,7 @@ protected:
 
 	void propagateDebugName() override;
 	void initCAMetalLayer(const VkSwapchainCreateInfoKHR* pCreateInfo,
-						  VkSwapchainPresentScalingCreateInfoEXT* pScalingInfo,
+						  VkSwapchainPresentScalingCreateInfoKHR* pScalingInfo,
 						  uint32_t imgCnt);
 	void initSurfaceImages(const VkSwapchainCreateInfoKHR* pCreateInfo, uint32_t imgCnt);
 	bool getIsSurfaceLost();
@@ -123,6 +123,7 @@ protected:
     void markFrameInterval();
 	void beginPresentation(const MVKImagePresentInfo& presentInfo);
 	void endPresentation(const MVKImagePresentInfo& presentInfo, uint64_t beginPresentTime, uint64_t actualPresentTime = 0);
+	void notifyPresentComplete(const MVKImagePresentInfo& presentInfo);
 	void forceUnpresentedImageCompletion();
 
 	MVKSurface* _surface = nullptr;

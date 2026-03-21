@@ -65,6 +65,7 @@ public:
 protected:
 	friend class MVKImageMemoryBinding;
 	friend MVKImage;
+	friend class MVKImageViewPlane;
 
     MTLTextureDescriptor* newMTLTextureDescriptor();
     void initSubresources(const VkImageCreateInfo* pCreateInfo);
@@ -391,17 +392,16 @@ protected:
     IOSurfaceRef _ioSurface;
 	VkDeviceSize _rowByteAlignment;
     bool _isDepthStencilAttachment;
-	bool _canSupportMTLTextureView;
     bool _hasExpectedTexelSize;
     bool _hasChromaSubsampling;
 	bool _isLinear;
-	bool _is3DCompressed;
 	bool _isAliasable;
 	bool _hasExtendedUsage;
 	bool _hasMutableFormat;
 	bool _shouldSupportAtomics;
 	bool _isLinearForAtomics;
 	bool _is2DViewOn3DImageCompatible = false;
+	bool _isBlockTexelViewCompatible = false;
 };
 
 
@@ -553,16 +553,12 @@ public:
 
     void releaseMTLTexture();
 
-	/** Returns the packed component swizzle of this image view. */
-	uint32_t getPackedSwizzle() { return _useShaderSwizzle ? mvkPackSwizzle(_componentSwizzle) : 0; }
-
     ~MVKImageViewPlane();
 
 protected:
     void propagateDebugName();
     id<MTLTexture> newMTLTexture();
 	VkResult initSwizzledMTLPixelFormat(const VkImageViewCreateInfo* pCreateInfo);
-	bool enableSwizzling();
     MVKImageViewPlane(MVKImageView* imageView, uint8_t planeIndex, MTLPixelFormat mtlPixFmt, const VkImageViewCreateInfo* pCreateInfo);
 
     friend MVKImageView;
@@ -572,8 +568,7 @@ protected:
     MTLPixelFormat _mtlPixFmt;
 	uint8_t _planeIndex;
     bool _useMTLTextureView;
-	bool _useNativeSwizzle;
-	bool _useShaderSwizzle;
+    bool _useSwizzle;
 };
 
 
@@ -611,9 +606,6 @@ public:
 	/** Returns the number of samples for each pixel of this image view. */
 	VkSampleCountFlagBits getSampleCount() { return _image->getSampleCount(); }
 
-    /** Returns the packed component swizzle of this image view. */
-    uint32_t getPackedSwizzle() { return _planes.empty() ? 0 : _planes[0]->getPackedSwizzle(); }	// Guard against destroyed instance retained in a descriptor.
-    
     /** Returns the number of planes of this image view. */
     uint8_t getPlaneCount() { return _planes.size(); }
 
@@ -712,6 +704,9 @@ public:
     
     /** Returns the number of planes if this is a ycbcr conversion or 0 otherwise. */
     uint8_t getPlaneCount() { return (_ycbcrConversion) ? _ycbcrConversion->getPlaneCount() : 0; }
+
+	/** Returns whether this is a ycbcr sampler. */
+	bool isYCBCR() { return _ycbcrConversion; }
 
 	/**
 	 * If this sampler requires hardcoding in MSL, populates the hardcoded sampler in the resource binding.

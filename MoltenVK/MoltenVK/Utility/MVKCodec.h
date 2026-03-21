@@ -22,26 +22,7 @@
 #include "MVKEnvironment.h"
 #include <vector>
 #include <string>
-
-
-#pragma mark -
-#pragma mark Texture data codecs
-
-/**
- * This is the base class implemented by all codecs supported by MoltenVK.
- * Objects of this class are used to decompress texture data for upload to a 3D texture.
- */
-class MVKCodec {
-
-public:
-
-	/** Decompresses compressed texture data for upload. */
-	virtual void decompress(void* pDest, const void* pSrc, const VkSubresourceLayout& destLayout, const VkSubresourceLayout& srcLayout, VkExtent3D extent) = 0;
-
-	/** Destructor. */
-	virtual ~MVKCodec() = default;
-
-};
+#include <memory>
 
 
 #pragma mark -
@@ -105,12 +86,6 @@ public:
 
 #pragma mark -
 #pragma mark Support functions
-
-/** Returns an appropriate codec for the given format, or nullptr if the format is not supported. */
-std::unique_ptr<MVKCodec> mvkCreateCodec(VkFormat format);
-
-/** Returns whether or not the given format can be decompressed. */
-bool mvkCanDecodeFormat(VkFormat format);
 
 /**
  * Compresses the source bytes into the destination bytes using a compression algorithm,

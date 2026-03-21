@@ -30,7 +30,7 @@
 #include "MVKBuffer.h"
 #include "MVKDeviceMemory.h"
 #include "MVKDescriptorSet.h"
-#include "MVKRenderpass.h"
+#include "MVKRenderPass.h"
 #include "MVKShaderModule.h"
 #include "MVKPipeline.h"
 #include "MVKFramebuffer.h"
@@ -3131,6 +3131,33 @@ MVK_PUBLIC_VULKAN_SYMBOL VkResult vkTransitionImageLayout(
 	return VK_SUCCESS;
 }
 
+MVK_PUBLIC_VULKAN_SYMBOL void vkCmdSetLineStipple(
+	VkCommandBuffer                             commandBuffer,
+    uint32_t                                    lineStippleFactor,
+    uint16_t                                    lineStipplePattern) {
+
+	MVKTraceVulkanCallStart();
+	MVKTraceVulkanCallEnd();
+}
+
+MVK_PUBLIC_VULKAN_SYMBOL void vkCmdSetRenderingAttachmentLocations(
+    VkCommandBuffer                             commandBuffer,
+	const VkRenderingAttachmentLocationInfo*    pLocationInfo) {
+
+	MVKTraceVulkanCallStart();
+	MVKAddCmd(SetRenderingAttachmentLocations, commandBuffer, pLocationInfo);
+	MVKTraceVulkanCallEnd();
+}
+
+MVK_PUBLIC_VULKAN_SYMBOL void vkCmdSetRenderingInputAttachmentIndices(
+    VkCommandBuffer                             commandBuffer,
+	const VkRenderingInputAttachmentIndexInfo*  pInputAttachmentIndexInfo) {
+
+	MVKTraceVulkanCallStart();
+	MVKAddCmd(SetRenderingInputAttachmentIndices, commandBuffer, pInputAttachmentIndexInfo);
+	MVKTraceVulkanCallEnd();
+}
+
 
 #pragma mark -
 #pragma mark VK_KHR_bind_memory2 extension
@@ -3283,11 +3310,20 @@ MVK_PUBLIC_VULKAN_CORE_ALIAS(vkEnumeratePhysicalDeviceGroups, KHR);
 MVK_PUBLIC_VULKAN_CORE_ALIAS(vkCmdDrawIndexedIndirectCount, KHR);
 MVK_PUBLIC_VULKAN_CORE_ALIAS(vkCmdDrawIndirectCount, KHR);
 
+
 #pragma mark -
 #pragma mark VK_KHR_dynamic_rendering extension
 
 MVK_PUBLIC_VULKAN_CORE_ALIAS(vkCmdBeginRendering, KHR);
 MVK_PUBLIC_VULKAN_CORE_ALIAS(vkCmdEndRendering, KHR);
+
+
+#pragma mark -
+#pragma mark VK_KHR_dynamic_rendering_local_read extension
+
+MVK_PUBLIC_VULKAN_CORE_ALIAS(vkCmdSetRenderingAttachmentLocations, KHR);
+MVK_PUBLIC_VULKAN_CORE_ALIAS(vkCmdSetRenderingInputAttachmentIndices, KHR);
+
 
 #pragma mark -
 #pragma mark VK_KHR_external_fence_capabilities extension
@@ -3335,6 +3371,30 @@ MVK_PUBLIC_VULKAN_SYMBOL VkResult vkGetMemoryMetalHandlePropertiesEXT(
 
 MVK_PUBLIC_VULKAN_CORE_ALIAS(vkGetPhysicalDeviceExternalSemaphoreProperties, KHR);
 
+#pragma mark -
+#pragma mark VK_KHR_external_semaphore_fd extension
+
+MVK_PUBLIC_VULKAN_SYMBOL VkResult vkImportSemaphoreFdKHR(
+                                                         VkDevice                          device,
+                                                         const VkImportSemaphoreFdInfoKHR* pImportSemaphoreFdInfo) {
+    MVKTraceVulkanCallStart();
+    auto* mvkSem4 = (MVKSemaphore*)pImportSemaphoreFdInfo->semaphore;
+    VkResult rslt = mvkSem4->importFd(pImportSemaphoreFdInfo->flags, pImportSemaphoreFdInfo->handleType, pImportSemaphoreFdInfo->fd);
+    MVKTraceVulkanCallEnd();
+    return rslt;
+}
+
+MVK_PUBLIC_VULKAN_SYMBOL VkResult vkGetSemaphoreFdKHR(
+                                                      VkDevice                       device,
+                                                      const VkSemaphoreGetFdInfoKHR* pGetFdInfo,
+                                                      int*                           pFd) {
+    MVKTraceVulkanCallStart();
+    auto* mvkSem4 = (MVKSemaphore*)pGetFdInfo->semaphore;
+    VkResult rslt = mvkSem4->exportFd(pGetFdInfo->handleType, pFd);
+    MVKTraceVulkanCallEnd();
+    return rslt;
+}
+
 
 #pragma mark -
 #pragma mark VK_KHR_get_memory_requirements2 extension
@@ -3354,6 +3414,12 @@ MVK_PUBLIC_VULKAN_CORE_ALIAS(vkGetPhysicalDeviceImageFormatProperties2, KHR);
 MVK_PUBLIC_VULKAN_CORE_ALIAS(vkGetPhysicalDeviceQueueFamilyProperties2, KHR);
 MVK_PUBLIC_VULKAN_CORE_ALIAS(vkGetPhysicalDeviceMemoryProperties2, KHR);
 MVK_PUBLIC_VULKAN_CORE_ALIAS(vkGetPhysicalDeviceSparseImageFormatProperties2, KHR);
+
+
+#pragma mark -
+#pragma mark VK_KHR_line_rasterization extension
+
+MVK_PUBLIC_VULKAN_CORE_ALIAS(vkCmdSetLineStipple, KHR);
 
 
 #pragma mark -
@@ -3412,7 +3478,28 @@ MVK_PUBLIC_VULKAN_SYMBOL VkResult vkWaitForPresentKHR(
 
 	MVKTraceVulkanCallStart();
 	MVKSwapchain* mvkSC = (MVKSwapchain*)swapchain;
-	VkResult rslt = mvkSC->waitForPresent(presentId, timeout);
+	const VkPresentWait2InfoKHR waitInfo = {
+		.sType = VK_STRUCTURE_TYPE_PRESENT_WAIT_2_INFO_KHR,
+		.presentId = presentId,
+		.timeout = timeout,
+	};
+	VkResult rslt = mvkSC->waitForPresent(&waitInfo);
+	MVKTraceVulkanCallEnd();
+	return rslt;
+}
+
+
+#pragma mark -
+#pragma mark VK_KHR_present_wait2 extension
+
+MVK_PUBLIC_VULKAN_SYMBOL VkResult vkWaitForPresent2KHR(
+    VkDevice                                    device,
+    VkSwapchainKHR                              swapchain,
+    const VkPresentWait2InfoKHR*                pPresentWait2Info) {
+
+	MVKTraceVulkanCallStart();
+	MVKSwapchain* mvkSC = (MVKSwapchain*)swapchain;
+	VkResult rslt = mvkSC->waitForPresent(pPresentWait2Info);
 	MVKTraceVulkanCallEnd();
 	return rslt;
 }
@@ -3558,12 +3645,13 @@ MVK_PUBLIC_VULKAN_SYMBOL VkResult vkAcquireNextImage2KHR(
 	return rslt;
 }
 
-#pragma mark -
-#pragma mark VK_EXT_swapchain_maintenance1 extension
 
-MVK_PUBLIC_VULKAN_SYMBOL VkResult vkReleaseSwapchainImagesEXT(
+#pragma mark -
+#pragma mark VK_KHR_swapchain_maintenance1 extension
+
+MVK_PUBLIC_VULKAN_SYMBOL VkResult vkReleaseSwapchainImagesKHR(
 	VkDevice                                    device,
-	const VkReleaseSwapchainImagesInfoEXT*      pReleaseInfo) {
+	const VkReleaseSwapchainImagesInfoKHR*      pReleaseInfo) {
 
 	MVKTraceVulkanCallStart();
 	MVKSwapchain* mvkSwapchain = (MVKSwapchain*)pReleaseInfo->swapchain;
@@ -3571,6 +3659,12 @@ MVK_PUBLIC_VULKAN_SYMBOL VkResult vkReleaseSwapchainImagesEXT(
 	MVKTraceVulkanCallEnd();
 	return rslt;
 }
+
+
+#pragma mark -
+#pragma mark VK_EXT_swapchain_maintenance1 extension
+
+MVK_PUBLIC_VULKAN_ALIAS(vkReleaseSwapchainImagesEXT, vkReleaseSwapchainImagesKHR);
 
 
 #pragma mark -
@@ -4065,9 +4159,10 @@ MVK_PUBLIC_VULKAN_SYMBOL void vkCmdSetExtraPrimitiveOverestimationSizeEXT(
 
 MVK_PUBLIC_VULKAN_SYMBOL void vkCmdSetLineRasterizationModeEXT(
     VkCommandBuffer                             commandBuffer,
-    VkLineRasterizationModeEXT                  lineRasterizationMode) {
+    VkLineRasterizationMode                     lineRasterizationMode) {
 
     MVKTraceVulkanCallStart();
+	MVKAddCmd(SetLineRasterizationMode, commandBuffer, lineRasterizationMode);
     MVKTraceVulkanCallEnd();
 }
 
@@ -4101,6 +4196,7 @@ MVK_PUBLIC_VULKAN_SYMBOL void vkCmdSetProvokingVertexModeEXT(
     VkProvokingVertexModeEXT                    provokingVertexMode) {
 
     MVKTraceVulkanCallStart();
+    MVKAddCmd(SetProvokingVertexMode, commandBuffer, provokingVertexMode);
     MVKTraceVulkanCallEnd();
 }
 
@@ -4216,6 +4312,12 @@ MVK_PUBLIC_VULKAN_CORE_ALIAS(vkTransitionImageLayout, EXT);
 #pragma mark VK_EXT_host_query_reset extension
 
 MVK_PUBLIC_VULKAN_CORE_ALIAS(vkResetQueryPool, EXT);
+
+
+#pragma mark -
+#pragma mark VK_EXT_line_rasterization extension
+
+MVK_PUBLIC_VULKAN_CORE_ALIAS(vkCmdSetLineStipple, EXT);
 
 
 #pragma mark -

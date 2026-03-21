@@ -127,12 +127,8 @@ MVK_PUBLIC_SYMBOL SPIRVToMSLConversionOptions::SPIRVToMSLConversionOptions() {
 
 #if MVK_MACOS
 	mslOptions.platform = CompilerMSL::Options::macOS;
-#endif
-#if MVK_IOS
+#else
 	mslOptions.platform = CompilerMSL::Options::iOS;
-#endif
-#if MVK_TVOS
- 	mslOptions.platform = CompilerMSL::Options::iOS;
 #endif
 
 	mslOptions.pad_fragment_output_components = true;
@@ -438,7 +434,6 @@ MVK_PUBLIC_SYMBOL bool SPIRVToMSLConverter::convert(SPIRVToMSLConversionConfigur
 	populateEntryPoint(pMSLCompiler, shaderConfig.options, conversionResult.resultInfo.entryPoint);
 	conversionResult.resultInfo.isRasterizationDisabled = pMSLCompiler && pMSLCompiler->get_is_rasterization_disabled();
 	conversionResult.resultInfo.isPositionInvariant = pMSLCompiler && pMSLCompiler->is_position_invariant();
-	conversionResult.resultInfo.needsSwizzleBuffer = pMSLCompiler && pMSLCompiler->needs_swizzle_buffer();
 	conversionResult.resultInfo.needsOutputBuffer = pMSLCompiler && pMSLCompiler->needs_output_buffer();
 	conversionResult.resultInfo.needsPatchOutputBuffer = pMSLCompiler && pMSLCompiler->needs_patch_output_buffer();
 	conversionResult.resultInfo.needsBufferSizeBuffer = pMSLCompiler && pMSLCompiler->needs_buffer_size_buffer();
@@ -602,31 +597,31 @@ void SPIRVToMSLConverter::populateWorkgroupDimension(SPIRVWorkgroupSizeDimension
 }
 
 // Populates the entry point with info extracted from the SPRI-V compiler.
-void SPIRVToMSLConverter::populateEntryPoint(Compiler* pCompiler,
+void SPIRVToMSLConverter::populateEntryPoint(CompilerMSL* pMSLCompiler,
 											 SPIRVToMSLConversionOptions& options,
 											 SPIRVEntryPoint& entryPoint) {
 
-	if ( !pCompiler ) { return; }
+	if ( !pMSLCompiler ) { return; }
 
 	SPIREntryPoint spvEP;
 	if (options.hasEntryPoint()) {
-		spvEP = pCompiler->get_entry_point(options.entryPointName, options.entryPointStage);
+		spvEP = pMSLCompiler->get_entry_point(options.entryPointName, options.entryPointStage);
 	} else {
-		const auto& entryPoints = pCompiler->get_entry_points_and_stages();
+		const auto& entryPoints = pMSLCompiler->get_entry_points_and_stages();
 		if ( !entryPoints.empty() ) {
 			auto& ep = entryPoints[0];
-			spvEP = pCompiler->get_entry_point(ep.name, ep.execution_model);
+			spvEP = pMSLCompiler->get_entry_point(ep.name, ep.execution_model);
 		}
 	}
 
 	entryPoint.mtlFunctionName = spvEP.name;
-	entryPoint.supportsFastMath = !spvEP.flags.get(ExecutionModeSignedZeroInfNanPreserve);
+	entryPoint.fpFastMathFlags = pMSLCompiler->get_fp_fast_math_flags(true);
 
 	uint32_t x, y, z;
-	getWorkgroupSize(pCompiler, spvEP, x, y, z);
+	getWorkgroupSize(pMSLCompiler, spvEP, x, y, z);
 
 	SpecializationConstant widthSC, heightSC, depthSC;
-	pCompiler->get_work_group_size_specialization_constants(widthSC, heightSC, depthSC);
+	pMSLCompiler->get_work_group_size_specialization_constants(widthSC, heightSC, depthSC);
 
 	auto& wgSize = entryPoint.workgroupSize;
 	populateWorkgroupDimension(wgSize.width,  x, widthSC);

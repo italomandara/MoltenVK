@@ -103,7 +103,7 @@ VkResult MVKSwapchain::acquireNextImage(uint64_t timeout,
 	return rslt ? rslt : getSurfaceStatus();
 }
 
-VkResult MVKSwapchain::releaseImages(const VkReleaseSwapchainImagesInfoEXT* pReleaseInfo) {
+VkResult MVKSwapchain::releaseImages(const VkReleaseSwapchainImagesInfoKHR* pReleaseInfo) {
 	for (uint32_t imgIdxIdx = 0; imgIdxIdx < pReleaseInfo->imageIndexCount; imgIdxIdx++) {
 		getPresentableImage(pReleaseInfo->pImageIndices[imgIdxIdx])->makeAvailable();
 	}
@@ -196,22 +196,20 @@ VkResult MVKSwapchain::getRefreshCycleDuration(VkRefreshCycleDurationGOOGLE *pRe
 		CGDisplayModeRef mode = CGDisplayCopyDisplayMode(displayId);
 		framesPerSecond = CGDisplayModeGetRefreshRate(mode);
 		CGDisplayModeRelease(mode);
-#if MVK_XCODE_13
 		if (framesPerSecond == 0 && [screen respondsToSelector: @selector(maximumFramesPerSecond)])
 			framesPerSecond = [screen maximumFramesPerSecond];
-#endif
 		// Builtin panels, e.g., on MacBook, report a zero refresh rate.
 		if (framesPerSecond == 0)
 			framesPerSecond = 60.0;
 	}
-#elif MVK_IOS_OR_TVOS || MVK_MACCAT
+#elif MVK_VISIONOS
+	NSInteger framesPerSecond = 90;		// TODO: See if this can be obtained from OS instead
+#else
     auto* screen = getCAMetalLayer().screenMVK;        // Will be nil if headless
 	NSInteger framesPerSecond = 60;
 	if ([screen respondsToSelector: @selector(maximumFramesPerSecond)]) {
 		framesPerSecond = screen.maximumFramesPerSecond;
 	}
-#elif MVK_VISIONOS
-	NSInteger framesPerSecond = 90;		// TODO: See if this can be obtained from OS instead
 #endif
 
 	pRefreshCycleDuration->refreshDuration = (uint64_t)1e9 / framesPerSecond;
@@ -245,10 +243,10 @@ VkResult MVKSwapchain::getPastPresentationTiming(uint32_t *pCount, VkPastPresent
 	return res;
 }
 
-VkResult MVKSwapchain::waitForPresent(uint64_t presentId, uint64_t timeout) {
+VkResult MVKSwapchain::waitForPresent(const VkPresentWait2InfoKHR* pWaitInfo) {
 	std::unique_lock lock(_currentPresentIdMutex);
-	const auto success = _currentPresentIdCondVar.wait_for(lock, std::chrono::nanoseconds(timeout), [this, presentId] {
-		return _currentPresentId >= presentId || getConfigurationResult() == VK_ERROR_OUT_OF_DATE_KHR;
+	const auto success = _currentPresentIdCondVar.wait_for(lock, std::chrono::nanoseconds(pWaitInfo->timeout), [this, pWaitInfo] {
+		return _currentPresentId >= pWaitInfo->presentId || getConfigurationResult() == VK_ERROR_OUT_OF_DATE_KHR;
 	});
 	if (getConfigurationResult() == VK_ERROR_OUT_OF_DATE_KHR) return VK_ERROR_OUT_OF_DATE_KHR;
 	return success ? VK_SUCCESS : VK_TIMEOUT;
@@ -277,7 +275,9 @@ void MVKSwapchain::endPresentation(const MVKImagePresentInfo& presentInfo, uint6
 	_presentTimingHistory[_presentHistoryIndex].earliestPresentTime = actualPresentTime;
 	_presentTimingHistory[_presentHistoryIndex].presentMargin = actualPresentTime > beginPresentTime ? actualPresentTime - beginPresentTime : 0;
 	_presentHistoryIndex = (_presentHistoryIndex + 1) % kMaxPresentationHistory;
+}
 
+void MVKSwapchain::notifyPresentComplete(const MVKImagePresentInfo& presentInfo) {
 	if (presentInfo.presentId != 0) {
 		std::unique_lock pidLock(_currentPresentIdMutex);
 		_currentPresentId = std::max(_currentPresentId, presentInfo.presentId);
@@ -406,16 +406,16 @@ MVKSwapchain::MVKSwapchain(MVKDevice* device, const VkSwapchainCreateInfoKHR* pC
 	memset(_presentTimingHistory, 0, sizeof(_presentTimingHistory));
 
 	// Retrieve the scaling and present mode structs if they are supplied.
-	VkSwapchainPresentScalingCreateInfoEXT* pScalingInfo = nullptr;
-	VkSwapchainPresentModesCreateInfoEXT* pPresentModesInfo = nullptr;
+	VkSwapchainPresentScalingCreateInfoKHR* pScalingInfo = nullptr;
+	VkSwapchainPresentModesCreateInfoKHR* pPresentModesInfo = nullptr;
 	for (auto* next = (const VkBaseInStructure*)pCreateInfo->pNext; next; next = next->pNext) {
 		switch (next->sType) {
-			case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_SCALING_CREATE_INFO_EXT: {
-				pScalingInfo = (VkSwapchainPresentScalingCreateInfoEXT*)next;
+			case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_SCALING_CREATE_INFO_KHR: {
+				pScalingInfo = (VkSwapchainPresentScalingCreateInfoKHR*)next;
 				break;
 			}
-			case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODES_CREATE_INFO_EXT: {
-				pPresentModesInfo = (VkSwapchainPresentModesCreateInfoEXT*)next;
+			case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODES_CREATE_INFO_KHR: {
+				pPresentModesInfo = (VkSwapchainPresentModesCreateInfoKHR*)next;
 				break;
 			}
 			default:
@@ -442,34 +442,34 @@ MVKSwapchain::MVKSwapchain(MVKDevice* device, const VkSwapchainCreateInfoKHR* pC
 }
 
 // kCAGravityResize is the Metal default
-static CALayerContentsGravity getCALayerContentsGravity(VkSwapchainPresentScalingCreateInfoEXT* pScalingInfo) {
+static CALayerContentsGravity getCALayerContentsGravity(VkSwapchainPresentScalingCreateInfoKHR* pScalingInfo) {
 
 	if( !pScalingInfo ) {                                         return kCAGravityResize; }
 
 	switch (pScalingInfo->scalingBehavior) {
-		case VK_PRESENT_SCALING_STRETCH_BIT_EXT:                  return kCAGravityResize;
-		case VK_PRESENT_SCALING_ASPECT_RATIO_STRETCH_BIT_EXT:     return kCAGravityResizeAspect;
-		case VK_PRESENT_SCALING_ONE_TO_ONE_BIT_EXT:
+		case VK_PRESENT_SCALING_STRETCH_BIT_KHR:                  return kCAGravityResize;
+		case VK_PRESENT_SCALING_ASPECT_RATIO_STRETCH_BIT_KHR:     return kCAGravityResizeAspect;
+		case VK_PRESENT_SCALING_ONE_TO_ONE_BIT_KHR:
 			switch (pScalingInfo->presentGravityY) {
-				case VK_PRESENT_GRAVITY_MIN_BIT_EXT:
+				case VK_PRESENT_GRAVITY_MIN_BIT_KHR:
 					switch (pScalingInfo->presentGravityX) {
-						case VK_PRESENT_GRAVITY_MIN_BIT_EXT:      return kCAGravityTopLeft;
-						case VK_PRESENT_GRAVITY_CENTERED_BIT_EXT: return kCAGravityTop;
-						case VK_PRESENT_GRAVITY_MAX_BIT_EXT:      return kCAGravityTopRight;
+						case VK_PRESENT_GRAVITY_MIN_BIT_KHR:      return kCAGravityTopLeft;
+						case VK_PRESENT_GRAVITY_CENTERED_BIT_KHR: return kCAGravityTop;
+						case VK_PRESENT_GRAVITY_MAX_BIT_KHR:      return kCAGravityTopRight;
 						default:                                  return kCAGravityTop;
 					}
-				case VK_PRESENT_GRAVITY_CENTERED_BIT_EXT:
+				case VK_PRESENT_GRAVITY_CENTERED_BIT_KHR:
 					switch (pScalingInfo->presentGravityX) {
-						case VK_PRESENT_GRAVITY_MIN_BIT_EXT:      return kCAGravityLeft;
-						case VK_PRESENT_GRAVITY_CENTERED_BIT_EXT: return kCAGravityCenter;
-						case VK_PRESENT_GRAVITY_MAX_BIT_EXT:      return kCAGravityRight;
+						case VK_PRESENT_GRAVITY_MIN_BIT_KHR:      return kCAGravityLeft;
+						case VK_PRESENT_GRAVITY_CENTERED_BIT_KHR: return kCAGravityCenter;
+						case VK_PRESENT_GRAVITY_MAX_BIT_KHR:      return kCAGravityRight;
 						default:                                  return kCAGravityCenter;
 					}
-				case VK_PRESENT_GRAVITY_MAX_BIT_EXT:
+				case VK_PRESENT_GRAVITY_MAX_BIT_KHR:
 					switch (pScalingInfo->presentGravityX) {
-						case VK_PRESENT_GRAVITY_MIN_BIT_EXT:      return kCAGravityBottomLeft;
-						case VK_PRESENT_GRAVITY_CENTERED_BIT_EXT: return kCAGravityBottom;
-						case VK_PRESENT_GRAVITY_MAX_BIT_EXT:      return kCAGravityBottomRight;
+						case VK_PRESENT_GRAVITY_MIN_BIT_KHR:      return kCAGravityBottomLeft;
+						case VK_PRESENT_GRAVITY_CENTERED_BIT_KHR: return kCAGravityBottom;
+						case VK_PRESENT_GRAVITY_MAX_BIT_KHR:      return kCAGravityBottomRight;
 						default:                                  return kCAGravityBottom;
 					}
 				default:                                          return kCAGravityCenter;
@@ -480,7 +480,7 @@ static CALayerContentsGravity getCALayerContentsGravity(VkSwapchainPresentScalin
 
 // Initializes the CAMetalLayer underlying the surface of this swapchain.
 void MVKSwapchain::initCAMetalLayer(const VkSwapchainCreateInfoKHR* pCreateInfo,
-									VkSwapchainPresentScalingCreateInfoEXT* pScalingInfo,
+									VkSwapchainPresentScalingCreateInfoKHR* pScalingInfo,
 									uint32_t imgCnt) {
 
 	auto* mtlLayer = getCAMetalLayer();
@@ -490,7 +490,7 @@ void MVKSwapchain::initCAMetalLayer(const VkSwapchainCreateInfoKHR* pCreateInfo,
 	mtlLayer.drawableSize = mvkCGSizeFromVkExtent2D(_imageExtent);
 	mtlLayer.device = getMTLDevice();
 	mtlLayer.pixelFormat = getPixelFormats()->getMTLPixelFormat(pCreateInfo->imageFormat);
-	mtlLayer.maximumDrawableCountMVK = imgCnt;
+	mtlLayer.maximumDrawableCount = imgCnt;
 	mtlLayer.displaySyncEnabledMVK = (pCreateInfo->presentMode != VK_PRESENT_MODE_IMMEDIATE_KHR);
 	mtlLayer.minificationFilter = minMagFilter;
 	mtlLayer.magnificationFilter = minMagFilter;
@@ -547,7 +547,6 @@ void MVKSwapchain::initCAMetalLayer(const VkSwapchainCreateInfoKHR* pCreateInfo,
 			mtlLayer.colorspaceNameMVK = kCGColorSpaceExtendedLinearITUR_2020;
 			mtlLayer.wantsExtendedDynamicRangeContentMVK = YES;
 			break;
-#if MVK_XCODE_12
 		case VK_COLOR_SPACE_HDR10_ST2084_EXT:
 			mtlLayer.colorspaceNameMVK = kCGColorSpaceITUR_2100_PQ;
 			mtlLayer.wantsExtendedDynamicRangeContentMVK = YES;
@@ -556,7 +555,6 @@ void MVKSwapchain::initCAMetalLayer(const VkSwapchainCreateInfoKHR* pCreateInfo,
 			mtlLayer.colorspaceNameMVK = kCGColorSpaceITUR_2100_HLG;
 			mtlLayer.wantsExtendedDynamicRangeContentMVK = YES;
 			break;
-#endif
 		case VK_COLOR_SPACE_ADOBERGB_NONLINEAR_EXT:
 			mtlLayer.colorspaceNameMVK = kCGColorSpaceAdobeRGB1998;
 			mtlLayer.wantsExtendedDynamicRangeContentMVK = NO;
@@ -619,7 +617,7 @@ void MVKSwapchain::initSurfaceImages(const VkSwapchainCreateInfoKHR* pCreateInfo
 		mvkEnableFlags(imgInfo.flags, VK_IMAGE_CREATE_SPLIT_INSTANCE_BIND_REGIONS_BIT);
 	}
 
-	// The VK_SWAPCHAIN_CREATE_DEFERRED_MEMORY_ALLOCATION_BIT_EXT flag is ignored, because
+	// The VK_SWAPCHAIN_CREATE_DEFERRED_MEMORY_ALLOCATION_BIT_KHR flag is ignored, because
 	// swapchain image memory allocation is provided by a MTLDrawable, which is retrieved
 	// lazily, and hence is already deferred (or as deferred as we can make it).
 
@@ -634,9 +632,7 @@ void MVKSwapchain::initSurfaceImages(const VkSwapchainCreateInfoKHR* pCreateInfo
 		// To prevent deadlocks, avoid dispatching screenMVK to the main thread at the cost of a less informative log.
 		if (NSThread.isMainThread) {
 			auto* screen = mtlLayer.screenMVK;
-			if ([screen respondsToSelector:@selector(localizedName)]) {
-				screenName = screen.localizedName;
-			}
+			screenName = screen.localizedName;
 		}
 #endif
 		MVKLogInfo("Created %d swapchain images with size (%d, %d) and contents scale %.1f in layer %s (%p) on screen %s.",
