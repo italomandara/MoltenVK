@@ -163,6 +163,7 @@ typedef struct {
     VkBool32 samplerMipLodBias;                     /**< If true, a mip lod bias can be set on a sampler. */
     VkSampleCountFlags supportedSamplePosCounts;    /**< A bitmask identifying the sample counts for which the device supports sample positions. */
     VkBool32 depthBoundsTest;                       /**< If true, depth bounds test is supported. */
+    VkBool32 depthBounds;
 } MVKPhysicalDeviceMetalFeatures;
 
 

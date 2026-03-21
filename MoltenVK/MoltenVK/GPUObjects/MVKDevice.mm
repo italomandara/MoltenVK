@@ -2765,6 +2765,7 @@ void MVKPhysicalDevice::initFeatures() {
     _features.inheritedQueries = true;
 	_features.vertexPipelineStoresAndAtomics = true;
 	_features.fragmentStoresAndAtomics = true;
+    _features.shaderCullDistance = true;
 
 	_features.shaderSampledImageArrayDynamicIndexing = _metalFeatures.arrayOfTextures;
 	_features.textureCompressionBC = _gpuCapabilities.supportsBCTextureCompression;
@@ -2775,7 +2776,7 @@ void MVKPhysicalDevice::initFeatures() {
     _features.depthClamp = true;
 
     _features.shaderStorageImageArrayDynamicIndexing = _metalFeatures.arrayOfTextures;
-    _features.depthBounds = _metalFeatures.depthBoundsTest;
+    _features.depthBounds = true;
 
     if ( supportsMTLGPUFamily(Apple1) ) {
         _features.textureCompressionETC2 = true;
