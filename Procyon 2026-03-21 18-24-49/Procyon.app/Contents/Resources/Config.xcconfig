@@ -1,0 +1,15 @@
+//
+//  Config.xcconfig
+//  Procyon
+//
+//  Created by Italo Mandara on 30/01/2026.
+//
+
+// Configuration settings file format documentation can be found at:
+// https://developer.apple.com/documentation/xcode/adding-a-build-configuration-file-to-your-project
+
+API_KEY = 0160LCR6RjfPneX
+API_PROTOCOL = https
+API_HOST = prapi-chi.vercel.app
+API_PATH = /api/v1
+API_PATH_M = /api/v1/multiple

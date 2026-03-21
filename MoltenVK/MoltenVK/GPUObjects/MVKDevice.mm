@@ -2575,8 +2575,9 @@ void MVKPhysicalDevice::initMetalFeatures() {
 	if (supportsMTLGPUFamily(Apple10)) {
 		_metalFeatures.maxTextureDimension = (32 * KIBI);
 		_metalFeatures.samplerMipLodBias = true;
-		_metalFeatures.depthBoundsTest = true;
+		
 	}
+    _metalFeatures.depthBoundsTest = true;
 
 // iOS, tvOS and visionOS adjustments necessary when running on the simulator.
 #if MVK_OS_SIMULATOR
