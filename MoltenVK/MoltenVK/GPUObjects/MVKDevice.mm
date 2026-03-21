@@ -826,7 +826,11 @@ void MVKPhysicalDevice::getProperties(VkPhysicalDeviceProperties2* properties) {
 	supportedProps12.pNext = nullptr;
 	supportedProps12.driverID = VK_DRIVER_ID_MOLTENVK;
 	strcpy(supportedProps12.driverName, kMVKMoltenVKDriverLayerName);
-	strcpy(supportedProps12.driverInfo, MVK_VERSION_STRING);
+    snprintf(supportedProps12.driverInfo, VK_MAX_DRIVER_INFO_SIZE,
+             "%d.%d.%d",
+             VK_VERSION_MAJOR(_properties.apiVersion),
+             VK_VERSION_MINOR(_properties.apiVersion),
+             VK_VERSION_PATCH(_properties.apiVersion));
 	supportedProps12.conformanceVersion = testedCTSVer;
 	supportedProps12.denormBehaviorIndependence = VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE;
 	supportedProps12.roundingModeIndependence = VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE;
