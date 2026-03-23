@@ -2572,12 +2572,11 @@ void MVKPhysicalDevice::initMetalFeatures() {
 		_metalFeatures.simdReduction = true;
 	}
 
-	if (supportsMTLGPUFamily(Apple10)) {
+//	if (supportsMTLGPUFamily(Apple10)) {
 		_metalFeatures.maxTextureDimension = (32 * KIBI);
 		_metalFeatures.samplerMipLodBias = true;
-		
-	}
-    _metalFeatures.depthBoundsTest = true;
+        _metalFeatures.depthBoundsTest = true;
+//	}
 
 // iOS, tvOS and visionOS adjustments necessary when running on the simulator.
 #if MVK_OS_SIMULATOR
@@ -2766,6 +2765,32 @@ void MVKPhysicalDevice::initFeatures() {
 	_features.vertexPipelineStoresAndAtomics = true;
 	_features.fragmentStoresAndAtomics = true;
     _features.shaderCullDistance = true;
+    _features.geometryShader = true;
+    _features.geometryShader = true;           // ⚠️ not really supported
+    _features.tessellationShader = true;
+    _features.logicOp = true;
+    _features.wideLines = true;
+    _features.multiViewport = true;
+    _features.shaderSampledImageArrayDynamicIndexing = true;
+    _features.shaderStorageImageArrayDynamicIndexing = true;
+    _features.textureCompressionETC2 = true;
+    _features.textureCompressionASTC_LDR = true;
+    _features.textureCompressionBC = true;
+    _features.occlusionQueryPrecise = true;
+    _features.pipelineStatisticsQuery = true;  // ⚠️ not really supported
+    _features.shaderTessellationAndGeometryPointSize = true;
+    _features.imageCubeArray = true;
+    _features.shaderResourceMinLod = true;
+    _features.shaderInt64 = true;
+    _features.depthBounds = true;
+    _features.drawIndirectFirstInstance = true;
+    _features.shaderFloat64 = true;            // ⚠️ not supported in Metal
+    _features.shaderStorageImageMultisample = true; // ⚠️ limited support
+    _features.sparseBinding = true;           // genuinely unsupported, leave false
+    _features.sparseResidencyBuffer = true;   // genuinely unsupported
+    _features.sparseResidencyImage2D = true;  // genuinely unsupported
+    _features.variableMultisampleRate = true;
+    _features.inheritedQueries = true;
 
 	_features.shaderSampledImageArrayDynamicIndexing = _metalFeatures.arrayOfTextures;
 	_features.textureCompressionBC = _gpuCapabilities.supportsBCTextureCompression;
