@@ -502,8 +502,8 @@ public:
 	bool areAnyBitsSet() const {
 		for (std::size_t elem : elems())
 			if (elem)
-				return false;
-		return true;
+				return true;
+		return false;
 	}
 	/** Returns whether all bits in the array are unset. */
 	bool areAllBitsClear() const { return !areAnyBitsSet(); }
