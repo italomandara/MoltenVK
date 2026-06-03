@@ -1,7 +1,7 @@
 /*
  * MVKPixelFormats.mm
  *
- * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2026 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -602,7 +602,7 @@ MTLTextureUsage MVKPixelFormats::getMTLTextureUsage(VkImageUsageFlags vkImageUsa
 	bool isStencilFmt = isStencilFormat(mtlFormat);
 	bool isCombinedDepthStencilFmt = isDepthFmt && isStencilFmt;
 	bool isColorFormat = !(isDepthFmt || isStencilFmt);
-	bool linearRenderSupported = _physicalDevice->getMetalFeatures()->renderLinearTextures;
+	bool linearRenderSupported = _physicalDevice && _physicalDevice->getMetalFeatures()->renderLinearTextures;
 	MVKMTLFmtCaps mtlFmtCaps = getCapabilities(mtlFormat, isExtended);
 
 	MTLTextureUsage mtlUsage = MTLTextureUsageUnknown;
@@ -1044,7 +1044,13 @@ void MVKPixelFormats::initVkFormatCapabilities() {
 
 void MVKPixelFormats::addMTLPixelFormatDescImpl(MTLPixelFormat mtlPixFmt, MTLPixelFormat mtlPixFmtLinear,
 												MVKMTLViewClass viewClass, MVKMTLFmtCaps fmtCaps, const char* name) {
-	_mtlPixelFormatDescriptions[mtlPixFmt] = { .mtlPixelFormat = mtlPixFmt, VK_FORMAT_UNDEFINED, fmtCaps, viewClass, mtlPixFmtLinear, name };
+	_mtlPixelFormatDescriptions[mtlPixFmt] = {
+		.mtlPixelFormat = mtlPixFmt,
+		.vkFormat = VK_FORMAT_UNDEFINED,
+		.mtlFmtCaps = fmtCaps,
+		.mtlViewClass = viewClass,
+		.mtlPixelFormatLinear = mtlPixFmtLinear,
+		.name = name };
 }
 
 // Verify mtlFmt exists on platform, to avoid overwriting the MTLPixelFormatInvalid entry.
@@ -1254,7 +1260,13 @@ void MVKPixelFormats::initMTLPixelFormatCapabilities(const MVKMTLDeviceCapabilit
 // If necessary, resize vector with empty elements
 void MVKPixelFormats::addMTLVertexFormatDescImpl(MTLVertexFormat mtlVtxFmt, MVKMTLFmtCaps vtxCap, const char* name) {
 	if (mtlVtxFmt >= _mtlVertexFormatDescriptions.size()) { _mtlVertexFormatDescriptions.resize(mtlVtxFmt + 1, {}); }
-	_mtlVertexFormatDescriptions[mtlVtxFmt] = { .mtlVertexFormat = mtlVtxFmt, VK_FORMAT_UNDEFINED, vtxCap, MVKMTLViewClass::None, MTLPixelFormatInvalid, name };
+	_mtlVertexFormatDescriptions[mtlVtxFmt] = {
+		.mtlVertexFormat = mtlVtxFmt,
+		.vkFormat = VK_FORMAT_UNDEFINED,
+		.mtlFmtCaps = vtxCap,
+		.mtlViewClass = MVKMTLViewClass::None,
+		.mtlPixelFormatLinear = MTLPixelFormatInvalid,
+		.name = name };
 }
 
 // Check mtlVtx exists on platform, to avoid overwriting the MTLVertexFormatInvalid entry.
@@ -1331,7 +1343,7 @@ void MVKPixelFormats::initMTLVertexFormatCapabilities(const MVKMTLDeviceCapabili
 
 	addMTLVertexFormatDesc( UChar4Normalized_BGRA );
 	
-	if (gpuCaps.supportsApple5 || gpuCaps.supportsMac2) {
+	if (gpuCaps.supportsApple5 || gpuCaps.supportsMac1) {
 		addMTLVertexFormatDesc( FloatRG11B10 );
 		addMTLVertexFormatDesc( FloatRGB9E5 );
 	}
@@ -1600,7 +1612,7 @@ void MVKPixelFormats::setFormatProperties(MVKVkFormatDesc& vkDesc, const MVKMTLD
 		// Start with optimal tiling features, and modify.
 		vkProps.linearTilingFeatures = vkProps.optimalTilingFeatures;
 
-        if (!_physicalDevice->getMetalFeatures()->renderLinearTextures) {
+        if (!gpuCaps.supportsRenderLinearTextures) {
             // On macOS IMR GPUs, linear textures cannot be used as attachments, so disable those features.
             mvkDisableFlags(vkProps.linearTilingFeatures, (kMVKVkFormatFeatureFlagsTexColorAtt |
                                                            kMVKVkFormatFeatureFlagsTexDSAtt |

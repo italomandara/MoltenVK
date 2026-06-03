@@ -1,7 +1,7 @@
 /*
  * MVKSync.h
  *
- * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2026 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -191,15 +191,6 @@ public:
 	 */
 	virtual id<MTLSharedEvent> getMTLSharedEvent() { return nil; };
 
-	/**
-	 * Import a semaphore from a file descriptor
-	 */
-	virtual VkResult importFd(VkSemaphoreImportFlags flags, VkExternalSemaphoreHandleTypeFlagBits handleType, int fd) { return VK_ERROR_FEATURE_NOT_PRESENT; };
-
-	/**
-	 * Export a semaphore to a file descriptor
-	 */
-	virtual VkResult exportFd(VkExternalSemaphoreHandleTypeFlagBits handleType, int *pFd) { return VK_ERROR_FEATURE_NOT_PRESENT; };
 
 #pragma mark Construction
 
@@ -250,8 +241,6 @@ public:
 	uint64_t deferSignal() override;
 	void encodeDeferredSignal(id<MTLCommandBuffer> mtlCmdBuff, uint64_t deferToken) override;
 	bool isUsingCommandEncoding() override { return true; }
-	VkResult importFd(VkSemaphoreImportFlags flags, VkExternalSemaphoreHandleTypeFlagBits handleType, int fd) override;
-	VkResult exportFd(VkExternalSemaphoreHandleTypeFlagBits handleType, int *pFd) override;
 
 	MVKSemaphoreMTLEvent(MVKDevice* device,
 						 const VkSemaphoreCreateInfo* pCreateInfo,
@@ -396,6 +385,7 @@ public:
 	/** Returns whether this fence has been signaled and not reset. */
 	bool getIsSignaled();
 
+	
 #pragma mark Construction
 
     MVKFence(MVKDevice* device, const VkFenceCreateInfo* pCreateInfo) :

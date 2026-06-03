@@ -1,7 +1,7 @@
 /*
  * MVKCommandEncoderState.mm
  *
- * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2026 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1614,7 +1614,7 @@ void MVKMetalComputeCommandEncoderState::prepareRenderDispatch(
 }
 
 void MVKMetalComputeCommandEncoderState::reset() {
-	memset(this, 0, offsetof(MVKMetalComputeCommandEncoderState, MEMSET_RESET_LINE));
+	memset((void*)this, 0, offsetof(MVKMetalComputeCommandEncoderState, MEMSET_RESET_LINE));
 	_vkStage = kMVKShaderStageCount;
 }
 

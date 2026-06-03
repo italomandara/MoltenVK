@@ -1,7 +1,7 @@
 /*
  * MVKSwapchain.mm
  *
- * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2026 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -486,6 +486,18 @@ void MVKSwapchain::initCAMetalLayer(const VkSwapchainCreateInfoKHR* pCreateInfo,
 	auto* mtlLayer = getCAMetalLayer();
 	if ( !mtlLayer || getIsSurfaceLost() ) { return; }
 
+	VkExtent2D prevSurfaceExtent = _surface->getExtent();
+	auto* oldSwapchain = (MVKSwapchain*)pCreateInfo->oldSwapchain;
+
+	// Because of a regression in Metal, the most recent one or two presentations may not
+	// complete and call back. Changing the CAMetalLayer drawableSize will force any incomplete
+	// presentations on the oldSwapchain to complete and call back, but if the drawableSize
+	// is not changing from the previous, we need to force those completions before resetting
+	// the layer to the same size on the replacement swapchain.
+	if (oldSwapchain && mvkVkExtent2DsAreEqual(pCreateInfo->imageExtent, prevSurfaceExtent)) {
+		oldSwapchain->forceUnpresentedImageCompletion();
+	}
+
 	auto minMagFilter = getMVKConfig().swapchainMinMagFilterUseNearest ? kCAFilterNearest : kCAFilterLinear;
 	mtlLayer.drawableSize = mvkCGSizeFromVkExtent2D(_imageExtent);
 	mtlLayer.device = getMTLDevice();
@@ -500,15 +512,6 @@ void MVKSwapchain::initCAMetalLayer(const VkSwapchainCreateInfoKHR* pCreateInfo,
 																			  VK_IMAGE_USAGE_SAMPLED_BIT |
 																			  VK_IMAGE_USAGE_STORAGE_BIT)) &&
 								!mvkAreAllFlagsEnabled(pCreateInfo->flags, VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR);
-
-	// Because of a regression in Metal, the most recent one or two presentations may not
-	// complete and call back. Changing the CAMetalLayer drawableSize will force any incomplete
-	// presentations on the oldSwapchain to complete and call back, but if the drawableSize
-	// is not changing from the previous, we force those completions first.
-	auto* oldSwapchain = (MVKSwapchain*)pCreateInfo->oldSwapchain;
-	if (oldSwapchain && mvkVkExtent2DsAreEqual(pCreateInfo->imageExtent, _surface->getExtent())) {
-		oldSwapchain->forceUnpresentedImageCompletion();
-	}
 
 	if (pCreateInfo->compositeAlpha != VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) {
 		mtlLayer.opaque = pCreateInfo->compositeAlpha == VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -597,6 +600,7 @@ void MVKSwapchain::initSurfaceImages(const VkSwapchainCreateInfoKHR* pCreateInfo
     VkImageCreateInfo imgInfo = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .pNext = VK_NULL_HANDLE,
+		.flags = 0,
         .imageType = VK_IMAGE_TYPE_2D,
         .format = pCreateInfo->imageFormat,
         .extent = mvkVkExtent3DFromVkExtent2D(imgExtent),
@@ -605,7 +609,6 @@ void MVKSwapchain::initSurfaceImages(const VkSwapchainCreateInfoKHR* pCreateInfo
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .usage = pCreateInfo->imageUsage,
-        .flags = 0,
     };
 
 	if (mvkAreAllFlagsEnabled(pCreateInfo->flags, VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR)) {

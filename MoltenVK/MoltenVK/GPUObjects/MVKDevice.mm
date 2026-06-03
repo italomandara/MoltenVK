@@ -1,7 +1,7 @@
 /*
  * MVKDevice.mm
  *
- * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2026 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -110,7 +110,8 @@ MVKMTLDeviceCapabilities::MVKMTLDeviceCapabilities(id<MTLDevice> mtlDev) {
 #if MVK_XCODE_26
 	supportsApple10 = supportsGPUFam(Apple10, mtlDev);
 #endif
-	supportsMac2 = MVK_MACOS;	// Incl Mac2 & MacCatalyst2
+	supportsMac1 = MVK_MACOS;
+	supportsMac2 = supportsGPUFam(Mac2, mtlDev) || supportsGPUFam(MacCatalyst2, mtlDev);
 
 	isAppleGPU = supportsApple1;
 
@@ -125,6 +126,9 @@ MVKMTLDeviceCapabilities::MVKMTLDeviceCapabilities(id<MTLDevice> mtlDev) {
 	}
 #if MVK_MACOS
 	supportsDepth24Stencil8 = mtlDev.isDepth24Stencil8PixelFormatSupported;
+#endif
+#if !MVK_OS_SIMULATOR
+	supportsRenderLinearTextures = supportsApple1;
 #endif
 }
 
@@ -1548,7 +1552,7 @@ VkResult MVKPhysicalDevice::getImageFormatProperties(VkFormat format,
 	const auto placementHeapFlags = VK_IMAGE_CREATE_2D_VIEW_COMPATIBLE_BIT_EXT |
 	                                VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT |
 	                                VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT;
-	if (!getMVKConfig().useMTLHeap && mvkIsAnyFlagEnabled(flags, placementHeapFlags)) {
+	if (!_metalFeatures.placementHeaps && mvkIsAnyFlagEnabled(flags, placementHeapFlags)) {
 		return VK_ERROR_FORMAT_NOT_SUPPORTED;
 	}
 
@@ -1843,16 +1847,12 @@ void MVKPhysicalDevice::getExternalFenceProperties(const VkPhysicalDeviceExterna
 	pExternalFenceProperties->pNext = next;
 }
 
-static const VkExternalSemaphoreProperties _extSemProps = {
-	VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES,
-	nullptr, 0, 0,
-	VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT
-};
+static const VkExternalSemaphoreProperties _emptyExtSemProps = {VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES, nullptr, 0, 0, 0};
 
 void MVKPhysicalDevice::getExternalSemaphoreProperties(const VkPhysicalDeviceExternalSemaphoreInfo* pExternalSemaphoreInfo,
 													   VkExternalSemaphoreProperties* pExternalSemaphoreProperties) {
 	void* next = pExternalSemaphoreProperties->pNext;
-	*pExternalSemaphoreProperties = _extSemProps;
+	*pExternalSemaphoreProperties = _emptyExtSemProps;
 	pExternalSemaphoreProperties->pNext = next;
 }
 
@@ -2461,17 +2461,21 @@ void MVKPhysicalDevice::initMetalFeatures() {
 
 	// AMD support for MTLHeap is buggy.
 	auto cfgUseMTLHeap = getMVKConfig().useMTLHeap;
-	_metalFeatures.placementHeaps = (_properties.vendorID == kAMDVendorId
-	                                 ? cfgUseMTLHeap == MVK_CONFIG_USE_MTLHEAP_ALWAYS
-	                                 : cfgUseMTLHeap != MVK_CONFIG_USE_MTLHEAP_NEVER);
+	auto allowMTLHeap = (_properties.vendorID == kAMDVendorId
+	                     ? cfgUseMTLHeap == MVK_CONFIG_USE_MTLHEAP_ALWAYS
+	                     : cfgUseMTLHeap != MVK_CONFIG_USE_MTLHEAP_NEVER);
+	_metalFeatures.placementHeaps = allowMTLHeap && (supportsMTLGPUFamily(Apple2) || supportsMTLGPUFamily(Mac2));
 	_metalFeatures.multisampleArrayTextures = !MVK_TVOS || mvkOSVersionIsAtLeast(16.0);
 
 	// Dynamic vertex stride needs to have everything aligned - compiled with support for vertex stride calls, and supported by both runtime OS and GPU.
 	_metalFeatures.dynamicVertexStride = mvkOSVersionIsAtLeast(14.0, 17.0, 1.0) && (supportsMTLGPUFamily(Apple4) || supportsMTLGPUFamily(Mac2));
 	_metalFeatures.nativeTextureAtomics = mvkOSVersionIsAtLeast(14.0, 17.0, 1.0) && (supportsMTLGPUFamily(Metal3) || supportsMTLGPUFamily(Apple6) || supportsMTLGPUFamily(Mac2));
 
-	if (supportsMTLGPUFamily(Mac2)) {
+	_metalFeatures.renderLinearTextures = _gpuCapabilities.supportsRenderLinearTextures;
+
+	if (supportsMTLGPUFamily(Mac1)) {
 		_metalFeatures.mtlBufferAlignment = 256;
+		_metalFeatures.mtlConstantBufferAlignment = 32;
 		_metalFeatures.mtlCopyBufferAlignment = 4;
 		_metalFeatures.maxPerStageTextureCount = 128;
 		_metalFeatures.maxTextureDimension = (16 * KIBI);
@@ -2491,25 +2495,28 @@ void MVKPhysicalDevice::initMetalFeatures() {
 		_metalFeatures.presentModeImmediate = true;
 		_metalFeatures.nonUniformThreadgroups = true;
 		_metalFeatures.native3DCompressedTextures = true;
-		_metalFeatures.multisampleLayeredRendering = _metalFeatures.layeredRendering;
-		_metalFeatures.stencilFeedback = true;
-		_metalFeatures.depthResolve = true;
-		_metalFeatures.stencilResolve = true;
 		_metalFeatures.simdPermute = true;
-		_metalFeatures.quadPermute = true;
-		_metalFeatures.simdReduction = true;
 		_metalFeatures.memoryBarriers = true;
 	}
 
+    if (supportsMTLGPUFamily(Mac2)) {
+		_metalFeatures.multisampleLayeredRendering = true;
+		_metalFeatures.stencilFeedback = true;
+		_metalFeatures.depthResolve = true;
+		_metalFeatures.stencilResolve = true;
+		_metalFeatures.quadPermute = true;
+		_metalFeatures.simdReduction = true;
+    }
+
     if (supportsMTLGPUFamily(Apple1)) {
 		_metalFeatures.mtlBufferAlignment = 64;
+		_metalFeatures.mtlConstantBufferAlignment = 4;
 		_metalFeatures.mtlCopyBufferAlignment = 1;
 		_metalFeatures.maxPerStageTextureCount = 31;
 		_metalFeatures.maxTextureDimension = (8 * KIBI);
 		_metalFeatures.maxQueryBufferSize = (64 * KIBI);
 
 		_metalFeatures.maxPerStageDynamicMTLBufferCount = _metalFeatures.maxPerStageBufferCount;
-		_metalFeatures.renderLinearTextures = true;
 		_metalFeatures.tileBasedDeferredRendering = true;
 
 		// From testing, these guarantees are only true on Apple GPUs.
@@ -2581,7 +2588,7 @@ void MVKPhysicalDevice::initMetalFeatures() {
 // iOS, tvOS and visionOS adjustments necessary when running on the simulator.
 #if MVK_OS_SIMULATOR
 	_metalFeatures.mtlBufferAlignment = 256;	// Even on Apple Silicon
-	_metalFeatures.renderLinearTextures = false;
+	_metalFeatures.mtlConstantBufferAlignment = 256;
 #endif
 
 #define setMSLVersion(maj, min)	\
@@ -2827,7 +2834,7 @@ void MVKPhysicalDevice::initFeatures() {
         _features.shaderResourceMinLod = true;
 	}
 
-    if (supportsMTLGPUFamily(Mac2)) {
+    if (supportsMTLGPUFamily(Mac1)) {
 		_features.occlusionQueryPrecise = true;
     	_features.imageCubeArray = true;
 		_features.tessellationShader = true;
@@ -2999,19 +3006,19 @@ void MVKPhysicalDevice::initLimits() {
 
     if (supportsMTLGPUFamily(Apple3)) {
         _properties.limits.optimalBufferCopyOffsetAlignment = 16;
-    } else if (supportsMTLGPUFamily(Mac2)) {
+    } else if (supportsMTLGPUFamily(Mac1)) {
         _properties.limits.optimalBufferCopyOffsetAlignment = 256;
     } else {
         _properties.limits.optimalBufferCopyOffsetAlignment = 64;
     }
 
-    if (supportsMTLGPUFamily(Apple4) || supportsMTLGPUFamily(Mac2)) {
+    if (supportsMTLGPUFamily(Apple4) || supportsMTLGPUFamily(Mac1)) {
         _properties.limits.maxFragmentInputComponents = 124;
     } else {
         _properties.limits.maxFragmentInputComponents = 60;
     }
 
-    if (supportsMTLGPUFamily(Apple5) || supportsMTLGPUFamily(Mac2)) {
+    if (supportsMTLGPUFamily(Apple5) || supportsMTLGPUFamily(Mac1)) {
         _properties.limits.maxTessellationGenerationLevel = 64;
         _properties.limits.maxTessellationPatchSize = 32;
     } else if (supportsMTLGPUFamily(Apple3)) {
@@ -3682,6 +3689,7 @@ void MVKPhysicalDevice::logGPUInfo() {
 	if (supportsMTLGPUFamily(Apple2)) { logMsg += "\n\t\tGPU Family Apple 2"; } else
 	if (supportsMTLGPUFamily(Apple1)) { logMsg += "\n\t\tGPU Family Apple 1"; }
 
+	if (supportsMTLGPUFamily(Mac1)) { logMsg += "\n\t\tGPU Family Mac 1"; }
 	if (supportsMTLGPUFamily(Mac2)) { logMsg += "\n\t\tGPU Family Mac 2"; }
 
 	logMsg += "\n\t\tRead-Write Texture Tier ";
@@ -3944,23 +3952,19 @@ void MVKDevice::getDescriptorVariableDescriptorCountLayoutSupport(const VkDescri
 		if (bindIdx == varBindingIdx) {
 			requestedCount = std::max(pBind->descriptorCount, 1u);
 		} else {
-			auto& mtlFeats = _physicalDevice->_metalFeatures;
 			switch (pBind->descriptorType) {
 				case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
 				case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
 				case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
 				case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
 					mtlBuffCnt += pBind->descriptorCount;
-					maxVarDescCount = mtlFeats.maxPerStageBufferCount - mtlBuffCnt;
 					break;
 				case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
-					maxVarDescCount = (uint32_t)min<VkDeviceSize>(mtlFeats.maxMTLBufferSize, numeric_limits<uint32_t>::max());
 					break;
 				case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
 				case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
 				case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
 					mtlTexCnt += pBind->descriptorCount;
-					maxVarDescCount = mtlFeats.maxPerStageTextureCount - mtlTexCnt;
 					break;
 				case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
 				case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
@@ -3968,25 +3972,51 @@ void MVKDevice::getDescriptorVariableDescriptorCountLayoutSupport(const VkDescri
 					if (_physicalDevice->_metalFeatures.nativeTextureAtomics) {
 						mtlBuffCnt += pBind->descriptorCount;
 					}
-					maxVarDescCount = min(mtlFeats.maxPerStageTextureCount - mtlTexCnt,
-										  mtlFeats.maxPerStageBufferCount - mtlBuffCnt);
 					break;
 				case VK_DESCRIPTOR_TYPE_SAMPLER:
 					mtlSampCnt += pBind->descriptorCount;
-					maxVarDescCount = mtlFeats.maxPerStageSamplerCount - mtlSampCnt;
 					break;
 				case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
 					mtlTexCnt += pBind->descriptorCount;
 					mtlSampCnt += pBind->descriptorCount;
-					maxVarDescCount = min(mtlFeats.maxPerStageTextureCount - mtlTexCnt,
-										  mtlFeats.maxPerStageSamplerCount - mtlSampCnt);
 					break;
 				default:
 					break;
 			}
 		}
 	}
-
+	auto& mtlFeats = _physicalDevice->_metalFeatures;
+	switch (pCreateInfo->pBindings[varBindingIdx].descriptorType) {
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+			maxVarDescCount = mtlFeats.maxPerStageBufferCount - mtlBuffCnt;
+			break;
+		case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
+			maxVarDescCount = (uint32_t)min<VkDeviceSize>(mtlFeats.maxMTLBufferSize, numeric_limits<uint32_t>::max());
+			break;
+		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+		case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+		case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+			maxVarDescCount = mtlFeats.maxPerStageTextureCount - mtlTexCnt;
+			break;
+		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+		case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+				maxVarDescCount = min(mtlFeats.maxPerStageTextureCount - mtlTexCnt,
+						    		  mtlFeats.maxPerStageBufferCount - mtlBuffCnt);
+			break;
+		case VK_DESCRIPTOR_TYPE_SAMPLER:
+				maxVarDescCount = mtlFeats.maxPerStageSamplerCount - mtlSampCnt;
+			break;
+		case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+				maxVarDescCount = min(mtlFeats.maxPerStageTextureCount - mtlTexCnt,
+						    		  mtlFeats.maxPerStageSamplerCount - mtlSampCnt);
+			break;
+		default:
+			break;
+	}
+	
 	// If there is enough room for the requested size, indicate the amount available,
 	// otherwise indicate that the requested size cannot be supported.
 	if (requestedCount <= maxVarDescCount) {

@@ -1,7 +1,7 @@
 /*
  * MVKCommandBuffer.mm
  *
- * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2026 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -150,9 +150,11 @@ VkResult MVKCommandBuffer::begin(const VkCommandBufferBeginInfo* pBeginInfo) {
 	}
 
 	if (pInheritInpAttIdxInfo) {
-		_secondaryInheritanceColorAttachmentInputIndices.assign(pInheritInpAttIdxInfo->pColorAttachmentInputIndices,
-																pInheritInpAttIdxInfo->pColorAttachmentInputIndices + pInheritInpAttIdxInfo->colorAttachmentCount);
-		_hasSecondaryInheritanceColorAttachmentInputIndices = true;
+		if (pInheritInpAttIdxInfo->pColorAttachmentInputIndices) {
+			_secondaryInheritanceColorAttachmentInputIndices.assign(pInheritInpAttIdxInfo->pColorAttachmentInputIndices,
+																	pInheritInpAttIdxInfo->pColorAttachmentInputIndices + pInheritInpAttIdxInfo->colorAttachmentCount);
+			_hasSecondaryInheritanceColorAttachmentInputIndices = true;
+		}
 
 		if (pInheritInpAttIdxInfo->pDepthInputAttachmentIndex) {
 			_secondaryInheritanceDepthAttachmentInputIndex = *pInheritInpAttIdxInfo->pDepthInputAttachmentIndex;
@@ -559,14 +561,16 @@ void MVKCommandEncoder::beginNextSubpass(MVKCommand* subpassCmd, VkSubpassConten
 }
 
 // Sets the current render subpass to the subpass with the specified index.
-// End current Metal renderpass before udpating subpass index.
+// End current Metal renderpass before updating subpass index.
 void MVKCommandEncoder::setSubpass(MVKCommand* subpassCmd,
 								   VkSubpassContents subpassContents,
 								   uint32_t subpassIndex,
 								   MVKCommandUse cmdUse) {
 	encodeStoreActions();
-	encodeBarrierUpdates();
 	endMetalRenderEncoding();
+
+	MVKRenderPass* renderPass = _pEncodingContext->getRenderPass();
+	if (renderPass) { renderPass->encodeSubpassDependencyBarriers(this, subpassIndex); }
 
 	_lastMultiviewPassCmd = subpassCmd;
 	_subpassContents = subpassContents;
@@ -619,6 +623,7 @@ static MVKBarrierStage commandUseToBarrierStage(MVKCommandUse use) {
 	case kMVKCommandUseBlitImage:                    return kMVKBarrierStageCopy; /**< vkCmdBlitImage. */
 	case kMVKCommandUseCopyImage:                    return kMVKBarrierStageCopy; /**< vkCmdCopyImage. */
 	case kMVKCommandUseResolveImage:                 return kMVKBarrierStageCopy; /**< vkCmdResolveImage - resolve stage. */
+    case kMVKCommandUseResolveSubpassAttachment:     return kMVKBarrierStageFragment; /**< Resolve subpass attachment. */
 	case kMVKCommandUseResolveExpandImage:           return kMVKBarrierStageCopy; /**< vkCmdResolveImage - expand stage. */
 	case kMVKCommandUseResolveCopyImage:             return kMVKBarrierStageCopy; /**< vkCmdResolveImage - copy stage. */
 	case kMVKCommandUseCopyImageToMemory:            return kMVKBarrierStageCopy; /**< vkCopyImageToMemory host sync. */
@@ -777,6 +782,9 @@ void MVKCommandEncoder::beginMetalRenderPass(MVKCommandUse cmdUse) {
 		if (!_pEncodingContext->visibilityResultBuffer.buffer()) {
 			_pEncodingContext->visibilityResultBuffer = _device->getVisibilityBuffer();
 		}
+		// Track the starting visibility offset for this Metal render pass so wrap detection compares
+		// against the correct baseline even when the buffer was already partially consumed.
+		_pEncodingContext->firstVisibilityResultOffsetInRenderPass = _pEncodingContext->visibilityResultBuffer.offset();
 		mtlRPDesc.visibilityResultBuffer = _pEncodingContext->visibilityResultBuffer.buffer();
 	}
 
@@ -1025,8 +1033,9 @@ void MVKCommandEncoder::endRenderpass() {
 	}
 
 	encodeStoreActions();
-	encodeBarrierUpdates();
 	endMetalRenderEncoding();
+	MVKRenderPass *renderPass = _pEncodingContext->getRenderPass();
+	if (renderPass) { renderPass->encodeSubpassDependencyBarriers(this, VK_SUBPASS_EXTERNAL); }
 	if ( !mvkIsAnyFlagEnabled(_pEncodingContext->getRenderingFlags(), VK_RENDERING_SUSPENDING_BIT) ) {
 		_pEncodingContext->setRenderingContext(nullptr, nullptr);
 	}
@@ -1038,16 +1047,18 @@ void MVKCommandEncoder::endMetalRenderEncoding() {
     if (_mtlRenderEncoder == nil) { return; }
 
 	if (_cmdBuffer->_hasStageCounterTimestampCommand) { [_mtlRenderEncoder updateFence: getStageCountersMTLFence() afterStages: MTLRenderStageFragment]; }
+	encodeBarrierUpdates();
 	endMetalEncoding(_mtlRenderEncoder);
 
 	getSubpass()->resolveUnresolvableAttachments(this, _attachments.contents());
+	endCurrentMetalEncoding();
 
     _occlusionQueryState.endMetalRenderPass(this);
 }
 
 void MVKCommandEncoder::endCurrentMetalEncoding() {
-	encodeBarrierUpdates();
 	endMetalRenderEncoding();
+	encodeBarrierUpdates();
 
 	if (_mtlComputeEncoder && _cmdBuffer->_hasStageCounterTimestampCommand) { [_mtlComputeEncoder updateFence: getStageCountersMTLFence()]; }
 	endMetalEncoding(_mtlComputeEncoder);
@@ -1365,6 +1376,7 @@ NSString* mvkMTLRenderCommandEncoderLabel(MVKCommandUse cmdUse) {
 		case kMVKCommandUseRestartSubpass:                  return @"Metal renderpass restart RenderEncoder";
         case kMVKCommandUseBlitImage:                       return @"vkCmdBlitImage RenderEncoder";
         case kMVKCommandUseResolveImage:                    return @"vkCmdResolveImage (resolve stage) RenderEncoder";
+        case kMVKCommandUseResolveSubpassAttachment:        return @"Resolve Subpass Attachment RenderEncoder";
         case kMVKCommandUseResolveExpandImage:              return @"vkCmdResolveImage (expand stage) RenderEncoder";
         case kMVKCommandUseClearColorImage:                 return @"vkCmdClearColorImage RenderEncoder";
         case kMVKCommandUseClearDepthStencilImage:          return @"vkCmdClearDepthStencilImage RenderEncoder";
@@ -1397,7 +1409,7 @@ NSString* mvkMTLComputeCommandEncoderLabel(MVKCommandUse cmdUse) {
         case kMVKCommandUseCopyImageToBuffer:               return @"vkCmdCopyImageToBuffer ComputeEncoder";
         case kMVKCommandUseFillBuffer:                      return @"vkCmdFillBuffer ComputeEncoder";
         case kMVKCommandUseClearColorImage:                 return @"vkCmdClearColorImage ComputeEncoder";
-		case kMVKCommandUseResolveImage:                    return @"Resolve Subpass Attachment ComputeEncoder";
+        case kMVKCommandUseResolveSubpassAttachment:        return @"Resolve Subpass Attachment ComputeEncoder";
         case kMVKCommandUseTessellationVertexTessCtl:       return @"vkCmdDraw (vertex and tess control stages) ComputeEncoder";
         case kMVKCommandUseDrawIndirectConvertBuffers:      return @"vkCmdDraw (convert indirect buffers) ComputeEncoder";
         case kMVKCommandUseCopyQueryPoolResults:            return @"vkCmdCopyQueryPoolResults ComputeEncoder";

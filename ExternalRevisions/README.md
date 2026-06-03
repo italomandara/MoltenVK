@@ -5,7 +5,7 @@
 
 #MoltenVK External Dependencies
 
-Copyright (c) 2015-2025 [The Brenwill Workshop Ltd.](http://www.brenwill.com)
+Copyright (c) 2015-2026 [The Brenwill Workshop Ltd.](http://www.brenwill.com)
 
 [comment]: # "This document is written in Markdown (http://en.wikipedia.org/wiki/Markdown) format."
 [comment]: # "For best results, use a Markdown reader."
@@ -141,8 +141,13 @@ if you encounter any building errors, you may need to re-add the *SPIRV-Tools* l
    - `fuzz`
    - `wasm`
 
-6. Remove the following *Files* from under the *Group* named `External/SPIRV-Tools/source`:
+6. To avoid compilation warnings, remove the following *Files* 
+   from under the *Group* named `External/SPIRV-Tools/source`:
    - `mimalloc.cpp`
+   - `pch_source.cpp`
+   - `opt/pch_source_opt.cpp`
+   - `reduce/pch_source_reduce.cpp`
+   - `util/timer.cpp`
 
 7. In the `Scripts` folder, run `./packagePregenSpirvToolsHeaders`, which will fetch and 
    build the full `SPIRV-Tools` library and will update `Templates/spirv-tools/build.zip` 

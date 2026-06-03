@@ -1,7 +1,7 @@
 /*
  * MVKFoundation.cpp
  *
- * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2026 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,7 @@ const char* mvkVkCommandName(MVKCommandUse cmdUse) {
 		case kMVKCommandUseBlitImage:                    return "vkCmdBlitImage";
 		case kMVKCommandUseCopyImage:                    return "vkCmdCopyImage";
 		case kMVKCommandUseResolveImage:                 return "vkCmdResolveImage (resolve stage)";
+		case kMVKCommandUseResolveSubpassAttachment:     return "Resolve subpass attachment";
 		case kMVKCommandUseResolveExpandImage:           return "vkCmdResolveImage (expand stage)";
 		case kMVKCommandUseResolveCopyImage:             return "vkCmdResolveImage (copy stage)";
 		case kMVKCommandUseCopyImageToMemory:            return "vkCopyImageToMemory host sync";
@@ -155,5 +156,4 @@ void mvkFlipVertically(void* rowMajorData, uint32_t rowCount, size_t bytesPerRow
 		memcpy(lowerRow, tmpRow, bytesPerRow);
 	}
 }
-
 

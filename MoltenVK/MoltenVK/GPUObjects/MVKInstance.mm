@@ -1,7 +1,7 @@
 /*
  * MVKInstance.mm
  *
- * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2026 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -817,8 +817,6 @@ void MVKInstance::initProcAddrs() {
 	ADD_DVC_EXT_ENTRY_POINT(vkCmdSetTessellationDomainOriginEXT, EXT_EXTENDED_DYNAMIC_STATE_3);
 	ADD_DVC_EXT_ENTRY_POINT(vkGetMemoryMetalHandleEXT, EXT_EXTERNAL_MEMORY_METAL);
 	ADD_DVC_EXT_ENTRY_POINT(vkGetMemoryMetalHandlePropertiesEXT, EXT_EXTERNAL_MEMORY_METAL);
-	ADD_DVC_EXT_ENTRY_POINT(vkImportSemaphoreFdKHR, KHR_EXTERNAL_SEMAPHORE_FD);
-	ADD_DVC_EXT_ENTRY_POINT(vkGetSemaphoreFdKHR, KHR_EXTERNAL_SEMAPHORE_FD);
 }
 
 void MVKInstance::logVersions() {

@@ -1,7 +1,7 @@
 /*
  * MVKRenderPass.h
  *
- * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2026 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -350,6 +350,9 @@ public:
 	/** Returns whether or not this render pass is a multiview render pass. */
 	bool isMultiview() const;
 
+	/** Encodes barriers for subpass dependencies with the specified destination subpass. */
+	void encodeSubpassDependencyBarriers(MVKCommandEncoder* cmdEncoder, uint32_t dstSubpass);
+
 	/** Returns the dynamic rendering flags. */
 	VkRenderingFlags getRenderingFlags() { return _renderingFlags; }
 
@@ -432,4 +435,3 @@ bool mvkHasColorAttachments(const VkPipelineRenderingCreateInfo* pRendInfo);
  */
 uint32_t mvkGetNextViewMaskGroup(uint32_t viewMask, uint32_t* startView,
 								 uint32_t* viewCount, uint32_t *groupMask = nullptr);
-

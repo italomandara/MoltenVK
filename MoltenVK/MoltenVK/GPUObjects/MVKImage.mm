@@ -1,7 +1,7 @@
 /*
  * MVKImage.mm
  *
- * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2026 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1018,6 +1018,11 @@ VkResult MVKImage::setMTLTexture(uint8_t planeIndex, id<MTLTexture> mtlTexture) 
     _planes[planeIndex]->releaseMTLTexture();
 	_planes[planeIndex]->_mtlTexture = [mtlTexture retain];		// retained
 
+	if (_planes[planeIndex]->_mtlTexture.storageMode != MTLStorageModeMemoryless) {
+		_device->makeResident(_planes[planeIndex]->_mtlTexture);
+		_device->getLiveResources().add(_planes[planeIndex]->_mtlTexture);
+	}
+
     _vkFormat = getPixelFormats()->getVkFormat(mtlTexture.pixelFormat);
 	_mtlTextureType = mtlTexture.textureType;
 	_extent.width = uint32_t(mtlTexture.width);
@@ -1369,7 +1374,7 @@ void MVKImage::validateConfig(const VkImageCreateInfo* pCreateInfo, bool isAttac
 	const auto placementHeapFlags = VK_IMAGE_CREATE_2D_VIEW_COMPATIBLE_BIT_EXT |
 	                                VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT |
 	                                VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT;
-	if (!getMVKConfig().useMTLHeap && mvkIsAnyFlagEnabled(pCreateInfo->flags, placementHeapFlags)) {
+	if (!getMetalFeatures().placementHeaps && mvkIsAnyFlagEnabled(pCreateInfo->flags, placementHeapFlags)) {
 		setConfigurationResult(reportError(VK_ERROR_FEATURE_NOT_PRESENT, "vkCreateImage() : MTLHeap must be enabled to create 2D-on-3D or block texel view compatible images."));
 	}
 
@@ -1872,10 +1877,7 @@ id<MTLTexture> MVKImageViewPlane::newMTLTexture() {
     NSRange sliceRange = NSMakeRange(_imageView->_subresourceRange.baseArrayLayer, _imageView->_subresourceRange.layerCount);
 
     // Support 2D views of 3D textures and block texel views using memory aliasing.
-    const bool is2dViewOf3d = image->_is2DViewOn3DImageCompatible &&
-        image->getImageType() == VK_IMAGE_TYPE_3D &&
-        (_imageView->_mtlTextureType == MTLTextureType2D || _imageView->_mtlTextureType == MTLTextureType2DArray);
-
+    const bool is2dViewOf3d = _imageView->getIs2dViewOf3d();
     const bool imageCompressed = image->getIsCompressed();
     const bool viewCompressed = getPixelFormats()->getFormatType(_mtlPixFmt) == kMVKFormatCompressed;
     const bool isBlockTexelView = image->_isBlockTexelViewCompatible && imageCompressed && !viewCompressed;
@@ -2229,7 +2231,8 @@ MVKImageView::MVKImageView(MVKDevice* device, const VkImageViewCreateInfo* pCrea
 		_subresourceRange.levelCount = _image->getMipLevelCount() - _subresourceRange.baseMipLevel;
 	}
 	if (_subresourceRange.layerCount == VK_REMAINING_ARRAY_LAYERS) {
-		_subresourceRange.layerCount = _image->getLayerCount() - _subresourceRange.baseArrayLayer;
+		uint32_t imgLayerCnt = getIs2dViewOf3d() ? _image->getExtent3D(0, _subresourceRange.baseMipLevel).depth : _image->getLayerCount();
+		_subresourceRange.layerCount = imgLayerCnt - _subresourceRange.baseArrayLayer;
 	}
 
 	auto& mtlFeats = getMetalFeatures();

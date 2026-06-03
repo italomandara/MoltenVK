@@ -1,7 +1,7 @@
 /*
  * MVKDescriptorSet.mm
  *
- * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2026 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1887,6 +1887,7 @@ static uint32_t maxGPUSize(MVKDescriptorGPULayout layout, const MVKPhysicalDevic
  * where each group is aligned to `groupAlign`, calculates the amount of space required to do that
  */
 static uint32_t calcGroupSizeWithPadding(uint32_t size, uint32_t groups, uint32_t elemAlign, uint32_t groupAlign) {
+	groups = std::min(groups, size / elemAlign);	// Each group needs at least one element
 	size += groups * (std::max(elemAlign, groupAlign) - elemAlign);
 	return size & ~(groupAlign - 1);
 }
@@ -1932,14 +1933,15 @@ MVKDescriptorPool* MVKDescriptorPool::Create(MVKDevice* device, const VkDescript
 			if (argBufMode == MVKArgumentBufferMode::Off || mayDisableArgumentBuffers(device))
 				cpuSize += calcGroupSizeWithPadding(inlineUniformSize, info->maxInlineUniformBlockBindings, 4, cpuAlign);
 			MVKDescriptorGPULayout gpuLayout = pickGPULayout(VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK, 1, argBufMode, device);
+			uint32_t dataAlign = gpuAlign;
 			if (gpuLayout == MVKDescriptorGPULayout::OutlinedData) {
 				// Add space for the pointers
 				gpuSize += alignDescriptorOffset(sizes.pointer.size, gpuAlign) * info->maxInlineUniformBlockBindings;
 				// Outlined data is 16-byte aligned
-				gpuAlign = std::max(gpuAlign, 16u);
+				dataAlign = std::max(dataAlign, 16u);
 			}
 			if (gpuLayout != MVKDescriptorGPULayout::None)
-				gpuSize += calcGroupSizeWithPadding(inlineUniformSize, info->maxInlineUniformBlockBindings, 4, gpuAlign);
+				gpuSize += calcGroupSizeWithPadding(inlineUniformSize, info->maxInlineUniformBlockBindings, 4, dataAlign);
 		}
 	}
 
@@ -1953,6 +1955,13 @@ MVKDescriptorPool* MVKDescriptorPool::Create(MVKDevice* device, const VkDescript
 	}
 
 	bool hostOnly = mvkIsAnyFlagEnabled(pCreateInfo->flags, VK_DESCRIPTOR_POOL_CREATE_HOST_ONLY_BIT_EXT) && argBufMode != MVKArgumentBufferMode::ArgEncoder;
+
+	// Apply Metal constant buffer offset alignment padding for descriptor sets
+	const uint32_t mtlCbufAlign = (uint32_t)device->getPhysicalDevice()->getMetalFeatures()->mtlConstantBufferAlignment;
+	const uint32_t cbufAlign = std::max(gpuAlign, hostOnly || argBufMode == MVKArgumentBufferMode::Off ? 1u : mtlCbufAlign);
+	gpuSize = calcGroupSizeWithPadding(gpuSize, pCreateInfo->maxSets, gpuAlign, cbufAlign);
+	gpuAlign = cbufAlign;
+
 	void* cpuBuffer;
 	void* hostOnlyGPUBuffer;
 	// Pad ourselves to reduce the amount of space wasted in driver padding

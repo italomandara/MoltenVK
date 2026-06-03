@@ -1,7 +1,7 @@
 /*
  * vulkan.mm
  *
- * Copyright (c) 2015-2025 The Brenwill Workshop Ltd. (http://www.brenwill.com)
+ * Copyright (c) 2015-2026 The Brenwill Workshop Ltd. (http://www.brenwill.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -3370,30 +3370,6 @@ MVK_PUBLIC_VULKAN_SYMBOL VkResult vkGetMemoryMetalHandlePropertiesEXT(
 #pragma mark VK_KHR_external_semaphore_capabilities extension
 
 MVK_PUBLIC_VULKAN_CORE_ALIAS(vkGetPhysicalDeviceExternalSemaphoreProperties, KHR);
-
-#pragma mark -
-#pragma mark VK_KHR_external_semaphore_fd extension
-
-MVK_PUBLIC_VULKAN_SYMBOL VkResult vkImportSemaphoreFdKHR(
-                                                         VkDevice                          device,
-                                                         const VkImportSemaphoreFdInfoKHR* pImportSemaphoreFdInfo) {
-    MVKTraceVulkanCallStart();
-    auto* mvkSem4 = (MVKSemaphore*)pImportSemaphoreFdInfo->semaphore;
-    VkResult rslt = mvkSem4->importFd(pImportSemaphoreFdInfo->flags, pImportSemaphoreFdInfo->handleType, pImportSemaphoreFdInfo->fd);
-    MVKTraceVulkanCallEnd();
-    return rslt;
-}
-
-MVK_PUBLIC_VULKAN_SYMBOL VkResult vkGetSemaphoreFdKHR(
-                                                      VkDevice                       device,
-                                                      const VkSemaphoreGetFdInfoKHR* pGetFdInfo,
-                                                      int*                           pFd) {
-    MVKTraceVulkanCallStart();
-    auto* mvkSem4 = (MVKSemaphore*)pGetFdInfo->semaphore;
-    VkResult rslt = mvkSem4->exportFd(pGetFdInfo->handleType, pFd);
-    MVKTraceVulkanCallEnd();
-    return rslt;
-}
 
 
 #pragma mark -
